@@ -1,4 +1,4 @@
-module github.com/charles-d-burton/scandalorian/discovery-engine
+module github.com/charles-d-burton/scandalorian-discovery-engine
 
 go 1.16
 
