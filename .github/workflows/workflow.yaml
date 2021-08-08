@@ -85,7 +85,7 @@ jobs:
       - name: Edit Kustomize
         run: |
           cd argocd
-          kustomize edit set image charlesdburton/scandalorian-ingest:latest=charlesdburton/scandalorian-discovery-engines:${{ github.sha }}
+          kustomize edit set image charlesdburton/scandalorian-discovery-engine:latest=charlesdburton/scandalorian-discovery-engine:${{ github.sha }}
           cat kustomization.yaml
 
       - name: Commit Files
