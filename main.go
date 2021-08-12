@@ -299,6 +299,7 @@ func (sw *ScanWorker) getHwAddr(sc *Scanner) (net.HardwareAddr, error) {
 		if err == pcap.NextErrorTimeoutExpired {
 			continue
 		} else if err != nil {
+			log.Debug(err)
 			return nil, err
 		}
 		packet := gopacket.NewPacket(data, layers.LayerTypeEthernet, gopacket.NoCopy)
