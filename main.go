@@ -324,19 +324,28 @@ func (s *ScanWorker) scan(ports []string, sc *Scanner) ([]string, error) {
 	go s.calculateSlidingWindow()
 	discoveredPorts := make([]string, 0)
 	// First off, get the MAC address we should be sending packets to.
-	hwaddr, err := s.getHwAddr(sc)
+	/*hwaddr, err := s.getHwAddr(sc)
 	if err != nil {
 		return nil, err
-	}
+	}*/
 
 	rl := ratelimit.New(rateLimit) //TODO: stop using constant
 	start := time.Now()
 
+	min := 10000
+	max := 65535
+	srcPort := layers.TCPPort(uint16(rand.Intn(max-min) + min)) //Create a random high port
+	tcp := layers.TCP{
+		SrcPort: srcPort,
+		DstPort: 0, // will be incremented during the scan
+		SYN:     true,
+	}
+
 	for _, port := range ports {
 		// Construct all the network layers we need.
 		eth := layers.Ethernet{
-			SrcMAC:       s.iface.HardwareAddr,
-			DstMAC:       hwaddr,
+			SrcMAC: s.iface.HardwareAddr,
+			//DstMAC:       hwaddr,
 			EthernetType: layers.EthernetTypeIPv4,
 		}
 		ip4 := layers.IPv4{
@@ -346,15 +355,8 @@ func (s *ScanWorker) scan(ports []string, sc *Scanner) ([]string, error) {
 			TTL:      64,
 			Protocol: layers.IPProtocolTCP,
 		}
-		min := 10000
-		max := 65535
-		srcPort := layers.TCPPort(uint16(rand.Intn(max-min) + min)) //Create a random high port
-		tcp := layers.TCP{
-			SrcPort: srcPort,
-			DstPort: 0, // will be incremented during the scan
-			SYN:     true,
-		}
-		tcp.SetNetworkLayerForChecksum(&ip4)
+
+		err := tcp.SetNetworkLayerForChecksum(&ip4)
 		if s.cancel.IsSet() {
 			return discoveredPorts, err
 		}
