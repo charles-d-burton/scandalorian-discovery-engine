@@ -324,10 +324,10 @@ func (s *ScanWorker) scan(ports []string, sc *Scanner) ([]string, error) {
 	go s.calculateSlidingWindow()
 	discoveredPorts := make([]string, 0)
 	// First off, get the MAC address we should be sending packets to.
-	/*hwaddr, err := s.getHwAddr(sc)
+	hwaddr, err := s.getHwAddr(sc)
 	if err != nil {
 		return nil, err
-	}*/
+	}
 
 	rl := ratelimit.New(rateLimit) //TODO: stop using constant
 	start := time.Now()
@@ -344,8 +344,8 @@ func (s *ScanWorker) scan(ports []string, sc *Scanner) ([]string, error) {
 	for _, port := range ports {
 		// Construct all the network layers we need.
 		eth := layers.Ethernet{
-			SrcMAC: s.iface.HardwareAddr,
-			//DstMAC:       hwaddr,
+			SrcMAC:       s.iface.HardwareAddr,
+			DstMAC:       hwaddr,
 			EthernetType: layers.EthernetTypeIPv4,
 		}
 		ip4 := layers.IPv4{
@@ -358,6 +358,7 @@ func (s *ScanWorker) scan(ports []string, sc *Scanner) ([]string, error) {
 
 		err := tcp.SetNetworkLayerForChecksum(&ip4)
 		if s.cancel.IsSet() {
+			log.Debug("cancel bit set, exiting scan")
 			return discoveredPorts, err
 		}
 		start = rl.Take() //Use the rate limiter
