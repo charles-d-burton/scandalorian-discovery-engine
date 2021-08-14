@@ -38,9 +38,9 @@ const (
 	durableName  = "discovery"
 	subscription = "discovery.requests"
 	publish      = "scan-engine.scans"
-	rateLimit    = 1000 //Upper boundary for how fast to scan a host TODO: convert to tunable
-	maxSamples   = 50
-	maxDuration  = 2 //Average number of seconds a scan is taking,  TODO: should convert to tunable
+	//rateLimit    = 1000 //Upper boundary for how fast to scan a host TODO: convert to tunable
+	maxSamples  = 50
+	maxDuration = 2 //Average number of seconds a scan is taking,  TODO: should convert to tunable
 )
 
 func main() {
@@ -136,7 +136,7 @@ func (scan *Scan) ProcessRequest(bus MessageBus) error {
 				return
 			}
 
-			scanner, err := newScanner(ip, router)
+			scanner, err := newScanner(ip, router, scan.PortScan.PPS)
 			if err != nil {
 				errs <- err
 				return
@@ -191,6 +191,8 @@ type Scanner struct {
 	Dst, Gw, Src net.IP
 	// iface is the interface to send packets on.
 	Iface *net.Interface
+
+	PPS int
 }
 
 type ScanWorker struct {
@@ -210,9 +212,10 @@ type ScanWorker struct {
 
 // newScanner creates a new scanner for a given destination IP address, using
 // router to determine how to route packets to that IP.
-func newScanner(ip net.IP, router routing.Router) (*Scanner, error) {
+func newScanner(ip net.IP, router routing.Router, pps int) (*Scanner, error) {
 	s := &Scanner{
 		Dst: ip,
+		PPS: pps,
 	}
 	// Figure out the route to the IP.
 	iface, gw, src, err := router.Route(ip)
@@ -329,17 +332,14 @@ func (s *ScanWorker) scan(ports []string, sc *Scanner) ([]string, error) {
 		return nil, err
 	}
 
-	rl := ratelimit.New(rateLimit) //TODO: stop using constant
-	start := time.Now()
-
-	min := 10000
-	max := 65535
-	srcPort := layers.TCPPort(uint16(rand.Intn(max-min) + min)) //Create a random high port
-	tcp := layers.TCP{
-		SrcPort: srcPort,
-		DstPort: 0, // will be incremented during the scan
-		SYN:     true,
+	var rl ratelimit.Limiter
+	if sc.PPS > 0 {
+		rl = ratelimit.New(sc.PPS) //TODO: stop using constant
+	} else {
+		rl = ratelimit.New(65536) //Effectively unlimited, the whole port range
 	}
+
+	start := time.Now()
 
 	for _, port := range ports {
 		log.Debugf("scanningi port: %v", port)
@@ -355,6 +355,15 @@ func (s *ScanWorker) scan(ports []string, sc *Scanner) ([]string, error) {
 			Version:  4,
 			TTL:      64,
 			Protocol: layers.IPProtocolTCP,
+		}
+
+		min := 10000
+		max := 65535
+		srcPort := layers.TCPPort(uint16(rand.Intn(max-min) + min)) //Create a random high port
+		tcp := layers.TCP{
+			SrcPort: srcPort,
+			DstPort: 0, // will be incremented during the scan
+			SYN:     true,
 		}
 
 		err := tcp.SetNetworkLayerForChecksum(&ip4)

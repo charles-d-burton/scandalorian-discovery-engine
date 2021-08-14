@@ -3,7 +3,7 @@ module github.com/charles-d-burton/scandalorian-discovery-engine
 go 1.16
 
 require (
-	github.com/charles-d-burton/scandalorian-types v0.0.0-20210814032256-1f3c8e1468f6
+	github.com/charles-d-burton/scandalorian-types v0.0.0-20210814042723-18b1863e5fb8
 	github.com/google/gopacket v1.1.20-0.20210429153827-3eaba0894325
 	github.com/json-iterator/go v1.1.11
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect

@@ -54,6 +54,8 @@ github.com/charles-d-burton/scandalorian-types v0.0.0-20210808232234-0459a98806a
 github.com/charles-d-burton/scandalorian-types v0.0.0-20210808232234-0459a98806ae/go.mod h1:VP+Z9mbl9lORUes0jJtHBGfqbAO8f+DWsxwFAEDR+p0=
 github.com/charles-d-burton/scandalorian-types v0.0.0-20210814032256-1f3c8e1468f6 h1:tnZUpS+vDRT87oQ69+fnsLi8vMj5+WDbm28Zk0w6VYo=
 github.com/charles-d-burton/scandalorian-types v0.0.0-20210814032256-1f3c8e1468f6/go.mod h1:VP+Z9mbl9lORUes0jJtHBGfqbAO8f+DWsxwFAEDR+p0=
+github.com/charles-d-burton/scandalorian-types v0.0.0-20210814042723-18b1863e5fb8 h1:f89rN/We6rRGH3dRUTQf38Ml0JnYfU2mWZKMAZqnHRQ=
+github.com/charles-d-burton/scandalorian-types v0.0.0-20210814042723-18b1863e5fb8/go.mod h1:VP+Z9mbl9lORUes0jJtHBGfqbAO8f+DWsxwFAEDR+p0=
 github.com/chzyer/logex v1.1.10/go.mod h1:+Ywpsq7O8HXn0nuIou7OrIPyXbp3wmkHB+jjWRnGsAI=
 github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e/go.mod h1:nSuG5e5PlCu98SY8svDHJxuZscDgtXS6KTTbou5AhLI=
 github.com/chzyer/test v0.0.0-20180213035817-a1ea475d72b1/go.mod h1:Q3SI9o4m/ZMnBNeIyt5eFwwo7qiLfzFZmjNmxjkiQlU=
