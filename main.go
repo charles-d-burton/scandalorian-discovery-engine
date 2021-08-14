@@ -24,17 +24,14 @@ import (
 	"go.uber.org/ratelimit"
 )
 
-type Scan struct {
-	scandaloriantypes.Scan
-	Ports  []string `json:"ports,omitempty"`
-	Errors []string `json:"errors,omitempty"`
-}
-
 /*
  * TODO List:
  * Need to verify that sending interface is IPV4 until I have time to figure out IPV6
- * Consider eBPF rather than libpcap and doing it raw on the wire
  */
+
+type Scan struct {
+	scandaloriantypes.PortScan
+}
 
 const (
 	streamName   = "discovery"
@@ -85,7 +82,7 @@ func main() {
 		messageChan := bus.Subscribe(errChan)
 		for message := range messageChan {
 			log.Debug("processing scan")
-			var scan Scan
+			var scan *Scan
 			err := json.Unmarshal(message.Data, &scan)
 			if err != nil {
 				errChan <- err
