@@ -342,6 +342,7 @@ func (s *ScanWorker) scan(ports []string, sc *Scanner) ([]string, error) {
 	}
 
 	for _, port := range ports {
+		log.Debugf("scanningi port: %v", port)
 		// Construct all the network layers we need.
 		eth := layers.Ethernet{
 			SrcMAC:       s.iface.HardwareAddr,
