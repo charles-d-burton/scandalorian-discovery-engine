@@ -63,8 +63,8 @@ func main() {
 			log.SetLevel(log.InfoLevel)
 			log.Warn(err)
 		} else {
-			log.Info("setting log level to debug")
-			log.SetLevel(log.DebugLevel) //TODO: This isn't right
+			log.Info("setting log level to %v", level)
+			log.SetLevel(level)
 		}
 	}
 	host := v.GetString("host")
