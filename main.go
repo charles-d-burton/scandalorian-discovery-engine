@@ -64,7 +64,7 @@ func main() {
 			log.Warn(err)
 		} else {
 			log.Info("setting log level to debug")
-			log.SetLevel(level)
+			log.SetLevel(log.DebugLevel) //TODO: This isn't right
 		}
 	}
 	host := v.GetString("host")
@@ -342,7 +342,7 @@ func (s *ScanWorker) scan(ports []string, sc *Scanner) ([]string, error) {
 	start := time.Now()
 
 	for _, port := range ports {
-		log.Debugf("scanningi port: %v", port)
+		log.Debugf("scanning port: %v", port)
 		// Construct all the network layers we need.
 		eth := layers.Ethernet{
 			SrcMAC:       s.iface.HardwareAddr,
