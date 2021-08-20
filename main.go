@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	//Using out of tree due to: https://github.com/google/gopacket/issues/698
@@ -114,73 +115,71 @@ func (scan *Scan) ProcessRequest(bus MessageBus) error {
 			scan.Ports = append(scan.Ports, strconv.Itoa(i))
 		}
 	}
-	//chunks := divPorts(scan.Ports)
-	//var wg sync.WaitGroup
-	//results := make(chan []string, len(chunks))
-	//errs := make(chan error, 100)
-	//for _, chunk := range chunks {
-	//wg.Add(1)
-	//go func(pchunk []string) {
-	//defer wg.Done()
-	router, err := routing.New()
-	if err != nil {
-		return err
-		//errs <- err
-	}
-	var ip net.IP
-	if ip = net.ParseIP(scan.IP); ip == nil {
-		//errs <- errors.New("invalid IP")
-		return errors.New("invalid IP")
-	} else if ip = ip.To4(); ip == nil {
-		//errs <- fmt.Errorf("non ipv4 target %s", scan.IP)
-		return fmt.Errorf("non ipv4 target %s", scan.IP)
-	}
+	chunks := divPorts(scan.Ports)
+	var wg sync.WaitGroup
+	results := make(chan []string, len(chunks))
+	errs := make(chan error, 100)
+	for _, chunk := range chunks {
+		wg.Add(1)
+		go func(pchunk []string) {
+			defer wg.Done()
+			router, err := routing.New()
+			if err != nil {
+				errs <- err
+			}
+			var ip net.IP
+			if ip = net.ParseIP(scan.IP); ip == nil {
+				errs <- errors.New("invalid IP")
+				return
+			} else if ip = ip.To4(); ip == nil {
+				errs <- fmt.Errorf("non ipv4 target %s", scan.IP)
+				return
+			}
 
-	scanner, err := newScanner(ip, router, scan.PortScan.PPS)
-	if err != nil {
-		//errs <- err
-		return err
-	}
-	worker, err := newWorker(scanner.Iface)
-	defer worker.close()
-	if err != nil {
-		//errs <- err
-		return err
-	}
+			scanner, err := newScanner(ip, router, scan.PortScan.PPS)
+			if err != nil {
+				errs <- err
+				return
+			}
+			worker, err := newWorker(scanner.Iface)
+			defer worker.close()
+			if err != nil {
+				errs <- err
+				return
+			}
 
-	discoveredPorts, err := worker.scan(scan.Ports, scanner)
-	if err != nil {
-		//errs <- err
-		return err
+			discoveredPorts, err := worker.scan(pchunk, scanner)
+			if err != nil {
+				errs <- err
+			}
+			if len(discoveredPorts) == 0 {
+				return
+			}
+			results <- discoveredPorts
+		}(chunk)
 	}
-	if len(discoveredPorts) == 0 {
-		return errors.New("no open ports for request")
-	}
-	//results <- discoveredPorts
-	//}(chunk)
-	//}
-	//wg.Wait()
-	//close(results)
-	//close(errs)
-	//errStrings := make([]string, 0)
-	/*for err := range errs {
+	wg.Wait()
+	close(results)
+	close(errs)
+	errStrings := make([]string, 0)
+	for err := range errs {
 		errStrings = append(errStrings, err.Error())
-	}*/
-	//set := make(map[string]bool)
-	//discoveredPorts := make([]string, 0)
-	/*for ports := range results {
+	}
+	set := make(map[string]bool)
+	discoveredPorts := make([]string, 0)
+	for ports := range results {
 		for _, port := range ports {
 			set[port] = true
 		}
-	}*/
-	/*for k := range set {
+	}
+	for k := range set {
 		discoveredPorts = append(discoveredPorts, k)
-	}*/
-	/*if len(discoveredPorts) == 0 {
+	}
+	if len(discoveredPorts) == 0 {
 		log.Infof("Not open ports found for request %s", scan.RequestID)
 		errStrings = append(errStrings, "no open ports found")
-	}*/
-	//scan.Errors = errStrings
+	}
+	scan.Errors = errStrings
 	scan.Ports = discoveredPorts
 
 	return bus.Publish(scan)
@@ -403,7 +402,7 @@ func (s *ScanWorker) scan(ports []string, sc *Scanner) ([]string, error) {
 			log.Debugf("Could not decode layers: %v\n", err)
 			continue
 		}
-		if tcp.SYN && tcp.ACK && tcp.SrcPort == srcPort {
+		if tcp.SYN && tcp.ACK {
 			log.Infof("port %v open", tcp.SrcPort)
 			//This is hacky but it's what the library gives me
 			discoveredPorts = append(discoveredPorts, (strings.Split(tcp.SrcPort.String(), "(")[0]))
