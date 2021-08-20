@@ -5,17 +5,18 @@ RUN apt update && apt install -y \
 		libc6-dev-armhf-cross\
         byacc flex \
         libpcap-dev \
+        libdbus-1-dev \
         file unzip
 RUN mkdir /app
 WORKDIR /app
 COPY ./ .
 RUN ls -al
-ENV PCAPV=1.9.1
+ENV PCAPV=1.10.1
 ENV CC=arm-linux-gnueabi-gcc
 RUN wget http://www.tcpdump.org/release/libpcap-$PCAPV.tar.gz && \
     tar xvf libpcap-$PCAPV.tar.gz && \
     cd libpcap-$PCAPV && \
-    ./configure --host=arm-linux --with-pcap=linux && \
+    ./configure --host=arm-linux --with-pcap=linux --disable-dbus --disable-usb --disable-canusb --disable-bluetooth && \
     make
 RUN cd /app && \
     CGO_ENABLED=1 GOOS=linux GOARCH=arm CGO_LDFLAGS="-L/app/libpcap-$PCAPV" go build -a -ldflags '-w -extldflags "-static"' -o discover-engine . && \
@@ -27,18 +28,19 @@ RUN apt update && apt install -y \
         libc6-dev-arm64-cross\
         byacc flex \
         libpcap-dev \
+        libdbus-1-dev \
         file unzip
 RUN mkdir /app
 WORKDIR /app
 COPY ./ .
 RUN ls -al
-ENV PCAPV=1.9.1
+ENV PCAPV=1.10.1
 ENV CC=aarch64-linux-gnu-gcc
 ENV CFLAGS='-Os'
 RUN wget http://www.tcpdump.org/release/libpcap-$PCAPV.tar.gz && \
     tar xvf libpcap-$PCAPV.tar.gz && \
     cd libpcap-$PCAPV && \
-    ./configure --host=aarch64-unknown-linux-gnu --with-pcap=linux && \
+    ./configure --host=aarch64-unknown-linux-gnu --with-pcap=linux --disable-dbus --disable-usb --disable-canusb --disable-bluetooth && \
     make
 RUN cd /app && \
     CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CGO_LDFLAGS="-L/app/libpcap-$PCAPV" go build -a -ldflags '-w -extldflags "-static"' -o discover-engine . && \
@@ -50,18 +52,19 @@ RUN apt update && apt install -y \
         build-essential \
         byacc flex \
         libpcap-dev \
+        libdbus-1-dev \
         file unzip
 RUN mkdir /app
 WORKDIR /app
 COPY ./ .
 RUN ls -al
-ENV PCAPV=1.9.1
+ENV PCAPV=1.10.1
 ENV CC=gcc
 ENV CFLAGS='-Os'
 RUN wget http://www.tcpdump.org/release/libpcap-$PCAPV.tar.gz && \
     tar xvf libpcap-$PCAPV.tar.gz && \
     cd libpcap-$PCAPV && \
-    ./configure --with-pcap=linux && \
+    ./configure --with-pcap=linux --disable-dbus --disable-usb --disable-canusb --disable-bluetooth && \
     make
 RUN cd /app && \
     CGO_ENABLED=1 GOOS=linux GOARCH=amd64 CGO_LDFLAGS="-L/app/libpcap-$PCAPV" go build -a -ldflags '-w -extldflags "-static"' -o discover-engine . && \
