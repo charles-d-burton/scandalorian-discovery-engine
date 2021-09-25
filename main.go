@@ -344,11 +344,11 @@ func (s *ScanWorker) scan(ports []string, sc *Scanner) ([]string, error) {
 	for _, port := range ports {
 		log.Debugf("scanning port: %v", port)
 		// Construct all the network layers we need.
-		eth := layers.Ethernet{
+		/*eth := layers.Ethernet{
 			SrcMAC:       s.iface.HardwareAddr,
 			DstMAC:       net.HardwareAddr{0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
 			EthernetType: layers.EthernetTypeIPv4,
-		}
+		}*/
 		ip4 := layers.IPv4{
 			SrcIP:    sc.Src,
 			DstIP:    sc.Dst,
@@ -396,7 +396,7 @@ func (s *ScanWorker) scan(ports []string, sc *Scanner) ([]string, error) {
 		}
 		tcp.DstPort = layers.TCPPort(pint)
 
-		if err := s.send(&eth, &ip4, &tcp); err != nil {
+		if err := s.send(&ip4, &tcp); err != nil {
 			log.Errorf("error sending to port %v: %v", tcp.DstPort, err)
 		}
 		// Time out 5 seconds after the last packet we sent.
@@ -414,7 +414,7 @@ func (s *ScanWorker) scan(ports []string, sc *Scanner) ([]string, error) {
 			log.Errorf("error reading packet: %v", err)
 			return discoveredPorts, err
 		}
-		parser := gopacket.NewDecodingLayerParser(layers.LayerTypeEthernet, &eth, &ip4, &tcp)
+		parser := gopacket.NewDecodingLayerParser(layers.LayerTypeEthernet, &ip4, &tcp)
 		decoded := []gopacket.LayerType{}
 		if err := parser.DecodeLayers(data, &decoded); err != nil {
 			log.Debugf("Could not decode layers: %v\n", err)
