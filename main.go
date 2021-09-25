@@ -327,10 +327,10 @@ func (s *ScanWorker) scan(ports []string, sc *Scanner) ([]string, error) {
 	go s.calculateSlidingWindow()
 	discoveredPorts := make([]string, 0)
 	// First off, get the MAC address we should be sending packets to.
-	hwaddr, err := s.getHwAddr(sc)
+	/*hwaddr, err := s.getHwAddr(sc)
 	if err != nil {
 		return nil, err
-	}
+	}*/
 
 	var rl ratelimit.Limiter
 	if sc.PPS > 0 {
@@ -346,7 +346,7 @@ func (s *ScanWorker) scan(ports []string, sc *Scanner) ([]string, error) {
 		// Construct all the network layers we need.
 		eth := layers.Ethernet{
 			SrcMAC:       s.iface.HardwareAddr,
-			DstMAC:       hwaddr,
+			DstMAC:       net.HardwareAddr{0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
 			EthernetType: layers.EthernetTypeIPv4,
 		}
 		ip4 := layers.IPv4{
@@ -363,7 +363,25 @@ func (s *ScanWorker) scan(ports []string, sc *Scanner) ([]string, error) {
 		tcp := layers.TCP{
 			SrcPort: srcPort,
 			DstPort: 0, // will be incremented during the scan
+			Seq:     rand.Uint32(),
 			SYN:     true,
+			Window:  64240,
+			Options: []layers.TCPOption{
+				{
+					OptionType:   layers.TCPOptionKindMSS,
+					OptionLength: 4,
+					OptionData:   []byte{0x05, 0xb4}, // 1460
+				},
+				{
+					OptionType:   layers.TCPOptionKindSACKPermitted,
+					OptionLength: 2,
+				},
+				{
+					OptionType:   layers.TCPOptionKindWindowScale,
+					OptionLength: 3,
+					OptionData:   []byte{7},
+				},
+			},
 		}
 
 		err := tcp.SetNetworkLayerForChecksum(&ip4)
@@ -389,7 +407,7 @@ func (s *ScanWorker) scan(ports []string, sc *Scanner) ([]string, error) {
 
 		log.Debugf("Scanning %v on port %d", sc.Dst, pint)
 		// Read in the next packet.
-		data, _, err := s.handle.ReadPacketData()
+		data, _, err := s.handle.ZeroCopyReadPacketData()
 		if err == pcap.NextErrorTimeoutExpired {
 			return discoveredPorts, err
 		} else if err != nil {
