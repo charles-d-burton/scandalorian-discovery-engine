@@ -1,25 +1,14 @@
 package main
 
 import (
-	"errors"
-	"math/rand"
-	"net"
 	"os"
-	"strconv"
 	"strings"
-	"time"
 
 	//Using out of tree due to: https://github.com/google/gopacket/issues/698
 
 	scandaloriantypes "github.com/charles-d-burton/scandalorian-types"
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
-	"github.com/google/gopacket/pcap"
-	"github.com/google/gopacket/routing"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"github.com/tevino/abool"
-	"go.uber.org/ratelimit"
 )
 
 /*
@@ -114,443 +103,33 @@ func main() {
 
 func (scan *Scan) ProcessRequest(bus MessageBus, laddr string) error {
 	log.Debug("start proccessing scan request")
+	scanPorts := make([]uint16, 0)
 	if len(scan.Ports) == 0 {
+		log.Debug("no ports defined, scanning everything")
 		for i := 0; i <= 65535; i++ {
-			scan.Ports = append(scan.Ports, strconv.Itoa(i))
+			scanPorts = append(scanPorts, uint16(i))
 		}
-	}
-
-	var rl ratelimit.Limiter
-	if scan.PPS > 0 {
-		rl = ratelimit.New(scan.PPS) //TODO: stop using constant
 	} else {
-		rl = ratelimit.New(65535) //Scan up to 10000 ports per second
-	}
-
-	intake := make(chan int, len(scan.Ports))
-	defer close(intake)
-
-	results := make(chan Result, len(scan.Ports))
-
-	log.Debug("initializing worker pool")
-	worker := func() {
-		for port := range intake {
-			rl.Take()
-			log.Debug("scanning port %d on host %s", port, scan.IP)
-			scanSyn(results, scan.IP, laddr, port, IPV4)
+		log.Debug("ports defined, converting to uint16 array")
+		for _, port := range scan.Ports {
+			scanPorts = append(scanPorts, uint16(port))
 		}
 	}
 
-	for i := 0; i < 100; i++ { //Up to 100 workers at a time, probably want to make this tunable
-		go worker()
+	log.Debug("scanning ports")
+	options := NewScanOptions()
+	if scan.PPS != 0 {
+		options.PPS = scan.PPS
 	}
-
-	log.Debug("adding ports to scan channel")
-	for _, port := range scan.Ports {
-		p, err := strconv.Atoi(port)
-		if err != nil {
-			log.Debug(err)
-		}
-		intake <- p
+	if scan.HostScanTimeoutSeconds != 0 {
+		options.TimeoutSeconds = scan.HostScanTimeoutSeconds
 	}
-
-	discoveredPorts := make([]string, 0)
-
-	log.Debug("collecting results")
-	tracker := 0
-	for result := range results {
-		log.Debug("entered results collection")
-		tracker++
-		if result.Found {
-			log.Debugf("found port %d", result.Port)
-			discoveredPorts = append(discoveredPorts, strconv.Itoa(result.Port))
-		}
-
-		if tracker == len(scan.Ports) {
-			close(results)
-		}
-	}
-	log.Debug("left results collection")
-
-	if len(discoveredPorts) == 0 {
-		log.Infof("Not open ports found for request %s", scan.RequestID)
-	}
-	scan.Ports = discoveredPorts
-	return bus.Publish(scan)
-
-}
-
-/*func (scan *Scan) ProcessRequest(bus MessageBus) error {
-	if len(scan.Ports) == 0 {
-		for i := 0; i <= 65535; i++ {
-			scan.Ports = append(scan.Ports, strconv.Itoa(i))
-		}
-	}
-	chunks := divPorts(scan.Ports)
-	var wg sync.WaitGroup
-	results := make(chan []string, len(chunks))
-	errs := make(chan error, 100)
-	for _, chunk := range chunks {
-		wg.Add(1)
-		go func(pchunk []string) {
-			defer wg.Done()
-			router, err := routing.New()
-			if err != nil {
-				errs <- err
-			}
-			var ip net.IP
-			if ip = net.ParseIP(scan.IP); ip == nil {
-				errs <- errors.New("invalid IP")
-				return
-			} else if ip = ip.To4(); ip == nil {
-				errs <- fmt.Errorf("non ipv4 target %s", scan.IP)
-				return
-			}
-
-			scanner, err := newScanner(ip, router, scan.PortScan.PPS)
-			if err != nil {
-				errs <- err
-				return
-			}
-			worker, err := newWorker(scanner.Iface)
-			defer worker.close()
-			if err != nil {
-				errs <- err
-				return
-			}
-
-			discoveredPorts, err := worker.scan(pchunk, scanner)
-			if err != nil {
-				errs <- err
-			}
-			if len(discoveredPorts) == 0 {
-				return
-			}
-			results <- discoveredPorts
-		}(chunk)
-	}
-	wg.Wait()
-	close(results)
-	close(errs)
-	errStrings := make([]string, 0)
-	for err := range errs {
-		errStrings = append(errStrings, err.Error())
-	}
-	set := make(map[string]bool)
-	discoveredPorts := make([]string, 0)
-	for ports := range results {
-		for _, port := range ports {
-			set[port] = true
-		}
-	}
-	for k := range set {
-		discoveredPorts = append(discoveredPorts, k)
-	}
-	if len(discoveredPorts) == 0 {
-		log.Infof("Not open ports found for request %s", scan.RequestID)
-		errStrings = append(errStrings, "no open ports found")
-	}
-	scan.Errors = errStrings
-	scan.Ports = discoveredPorts
-
-	return bus.Publish(scan)
-}*/
-
-// scanner handles scanning a single IP address.
-type Scanner struct {
-	// destination, gateway (if applicable), and source IP addresses to use.
-	Dst, Gw, Src net.IP
-	// iface is the interface to send packets on.
-	Iface *net.Interface
-
-	PPS int
-}
-
-type ScanWorker struct {
-	// iface is the interface to send packets on.
-	iface  *net.Interface
-	handle *pcap.Handle
-
-	// opts and buf allow us to easily serialize packets in the send()
-	// method.
-	opts gopacket.SerializeOptions
-	buf  gopacket.SerializeBuffer
-
-	sampleRateInput chan *time.Time
-	samples         []*time.Duration
-	cancel          *abool.AtomicBool
-}
-
-// newScanner creates a new scanner for a given destination IP address, using
-// router to determine how to route packets to that IP.
-func newScanner(ip net.IP, router routing.Router, pps int) (*Scanner, error) {
-	s := &Scanner{
-		Dst: ip,
-		PPS: pps,
-	}
-	// Figure out the route to the IP.
-	iface, gw, src, err := router.Route(ip)
+	foundPorts, err := scanSyn(scanPorts, scan.IP, laddr, options)
 	if err != nil {
-		return nil, err
-	}
-
-	log.Infof("scanning ip %v with interface %v, gateway %v, src %v", ip, iface.Name, gw, src)
-	s.Gw, s.Src, s.Iface = gw, src, iface
-
-	return s, nil
-}
-
-func newWorker(iface *net.Interface) (*ScanWorker, error) {
-	var scanWorker ScanWorker
-	scanWorker.opts = gopacket.SerializeOptions{
-		FixLengths:       true,
-		ComputeChecksums: true,
-	}
-	scanWorker.buf = gopacket.NewSerializeBuffer()
-	scanWorker.iface = iface
-	// Open the handle for reading/writing.
-	// Note we could very easily add some BPF filtering here to greatly
-	// decrease the number of packets we have to look at when getting back
-	// scan results.
-	handle, err := pcap.OpenLive(iface.Name, 65536, true, pcap.BlockForever)
-	if err != nil {
-		return nil, err
-	}
-	scanWorker.handle = handle
-	scanWorker.sampleRateInput = make(chan *time.Time, 51)
-	scanWorker.cancel = abool.New()
-	return &scanWorker, nil
-}
-
-// close cleans up the handle.
-func (s *ScanWorker) close() {
-	s.handle.Close()
-}
-
-// getHwAddr is a hacky but effective way to get the destination hardware
-// address for our packets.  It does an ARP request for our gateway (if there is
-// one) or destination IP (if no gateway is necessary), then waits for an ARP
-// reply.  This is pretty slow right now, since it blocks on the ARP
-// request/reply.
-func (sw *ScanWorker) getHwAddr(sc *Scanner) (net.HardwareAddr, error) {
-	start := time.Now()
-	arpDst := sc.Dst
-	if sc.Gw != nil {
-		arpDst = sc.Gw
-	}
-	// Prepare the layers to send for an ARP request.
-	eth := layers.Ethernet{
-		SrcMAC:       sw.iface.HardwareAddr,
-		DstMAC:       net.HardwareAddr{0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
-		EthernetType: layers.EthernetTypeARP,
-	}
-	arp := layers.ARP{
-		AddrType:          layers.LinkTypeEthernet,
-		Protocol:          layers.EthernetTypeIPv4,
-		HwAddressSize:     6,
-		ProtAddressSize:   4,
-		Operation:         layers.ARPRequest,
-		SourceHwAddress:   []byte(sw.iface.HardwareAddr),
-		SourceProtAddress: []byte(sc.Src),
-		DstHwAddress:      []byte{0, 0, 0, 0, 0, 0},
-		DstProtAddress:    []byte(arpDst),
-	}
-	// Send a single ARP request packet (we never retry a send, since this
-	// is just an example ;)
-	if err := sw.send(&eth, &arp); err != nil {
-		return nil, err
-	}
-
-	// Wait 3 seconds for an ARP reply.
-	for {
-		if time.Since(start) > time.Second*3 {
-			return nil, errors.New("timeout getting ARP reply")
-		}
-		data, _, err := sw.handle.ReadPacketData()
-		if err == pcap.NextErrorTimeoutExpired {
-			continue
-		} else if err != nil {
-			log.Debug(err)
-			return nil, err
-		}
-		packet := gopacket.NewPacket(data, layers.LayerTypeEthernet, gopacket.NoCopy)
-		if arpLayer := packet.Layer(layers.LayerTypeARP); arpLayer != nil {
-			arp := arpLayer.(*layers.ARP)
-			if net.IP(arp.SourceProtAddress).Equal(net.IP(arpDst)) {
-				return net.HardwareAddr(arp.SourceHwAddress), nil
-			}
-		}
-	}
-}
-
-// send sends the given layers as a single packet on the network.
-func (s *ScanWorker) send(l ...gopacket.SerializableLayer) error {
-	if err := gopacket.SerializeLayers(s.buf, s.opts, l...); err != nil {
 		return err
 	}
-	return s.handle.WritePacketData(s.buf.Bytes())
-}
 
-// this code is fugly, I need to make it more readable
-// scan scans the dst IP address of this scanner.
-func (s *ScanWorker) scan(ports []string, sc *Scanner) ([]string, error) {
-	//Start the average calculation
-	go s.calculateSlidingWindow()
-	discoveredPorts := make([]string, 0)
-	// First off, get the MAC address we should be sending packets to.
-	hwaddr, err := s.getHwAddr(sc)
-	if err != nil {
-		return nil, err
-	}
+	scan.Ports = foundPorts
+	return bus.Publish(scan)
 
-	var rl ratelimit.Limiter
-	if sc.PPS > 0 {
-		rl = ratelimit.New(sc.PPS) //TODO: stop using constant
-	} else {
-		rl = ratelimit.New(65536) //Effectively unlimited, the whole port range
-	}
-
-	start := time.Now()
-
-	for _, port := range ports {
-		log.Debugf("scanning port: %v", port)
-		// Construct all the network layers we need.
-		eth := layers.Ethernet{
-			SrcMAC:       s.iface.HardwareAddr,
-			DstMAC:       hwaddr,
-			EthernetType: layers.EthernetTypeIPv4,
-		}
-		ip4 := layers.IPv4{
-			SrcIP:    sc.Src,
-			DstIP:    sc.Dst,
-			Version:  4,
-			TTL:      64,
-			Protocol: layers.IPProtocolTCP,
-		}
-
-		min := 10000
-		max := 65535
-		srcPort := layers.TCPPort(uint16(rand.Intn(max-min) + min)) //Create a random high port
-		tcp := layers.TCP{
-			SrcPort: srcPort,
-			DstPort: 0, // will be incremented during the scan
-			Seq:     rand.Uint32(),
-			SYN:     true,
-			Window:  64240,
-			Options: []layers.TCPOption{
-				{
-					OptionType:   layers.TCPOptionKindMSS,
-					OptionLength: 4,
-					OptionData:   []byte{0x05, 0xb4}, // 1460
-				},
-				{
-					OptionType:   layers.TCPOptionKindSACKPermitted,
-					OptionLength: 2,
-				},
-				{
-					OptionType:   layers.TCPOptionKindWindowScale,
-					OptionLength: 3,
-					OptionData:   []byte{7},
-				},
-			},
-		}
-
-		err := tcp.SetNetworkLayerForChecksum(&ip4)
-		if s.cancel.IsSet() {
-			log.Debug("cancel bit set, exiting scan")
-			return discoveredPorts, err
-		}
-		start = rl.Take() //Use the rate limiter
-		pint, err := strconv.Atoi(port)
-		if err != nil {
-			return discoveredPorts, err
-		}
-		tcp.DstPort = layers.TCPPort(pint)
-
-		if err := s.send(&eth, &ip4, &tcp); err != nil {
-			log.Errorf("error sending to port %v: %v", tcp.DstPort, err)
-		}
-		// Time out 5 seconds after the last packet we sent.
-		if time.Since(start) > time.Second*5 {
-			log.Errorf("timed out for %v, assuming we've seen all we can", sc.Dst)
-			return discoveredPorts, err
-		}
-
-		log.Debugf("Scanning %v on port %d", sc.Dst, pint)
-		// Read in the next packet.
-		data, _, err := s.handle.ZeroCopyReadPacketData()
-		if err == pcap.NextErrorTimeoutExpired {
-			return discoveredPorts, err
-		} else if err != nil {
-			log.Errorf("error reading packet: %v", err)
-			return discoveredPorts, err
-		}
-		parser := gopacket.NewDecodingLayerParser(layers.LayerTypeEthernet, &eth, &ip4, &tcp)
-		decoded := []gopacket.LayerType{}
-		if err := parser.DecodeLayers(data, &decoded); err != nil {
-			log.Debugf("Could not decode layers: %v\n", err)
-			continue
-		}
-		if tcp.SYN && tcp.ACK {
-			log.Infof("port %v open", tcp.SrcPort)
-			//This is hacky but it's what the library gives me
-			discoveredPorts = append(discoveredPorts, (strings.Split(tcp.SrcPort.String(), "(")[0]))
-		}
-		now := time.Now()
-		s.sampleRateInput <- &now
-	}
-	log.Debug("returning discovered ports")
-	return discoveredPorts, nil
-}
-
-//Calculate a sliding window average of scan times.  This could likely be optimized better but this will give a "true" average at the expense of computation/memory
-func (s *ScanWorker) calculateSlidingWindow() {
-	now := time.Now()
-	for sampleTime := range s.sampleRateInput {
-		diff := sampleTime.Sub(now) //difference last sample with current sample
-		now = time.Now()            //reset now so calculation is correct
-		if diff > 5 {
-			//Outlier, discard
-			continue
-		}
-		//Construct circular buffer of values
-		if len(s.samples) >= maxSamples {
-			//drop value 0 off and shift left
-			copy(s.samples, s.samples[len(s.samples)-maxSamples+1:])
-			s.samples = s.samples[:maxSamples-1]
-		}
-		s.samples = append(s.samples, &diff)
-		if len(s.samples) == maxSamples {
-			//Buffer is full so let's calculate
-			var total float64
-			for _, sample := range s.samples {
-				total += sample.Seconds()
-			}
-			avg := total / maxSamples
-			log.Debugf("sample rate: %f", avg)
-			if avg > maxDuration {
-				log.Info("scan is running too slow")
-				s.cancel.Set()
-			}
-		}
-		//Probably not necessary, just here for debugging if something goes wrong
-		if len(s.samples) > maxSamples {
-			log.Info("scan samples exceeded capacity")
-			s.samples = s.samples[:maxSamples]
-		}
-	}
-}
-
-//Chunk up the ports to be scanned to work can be done in parallel
-func divPorts(ports []string) [][]string {
-	chunkSize := 6000
-	var divided [][]string
-	for i := 0; i < len(ports); i += chunkSize {
-		end := i + chunkSize
-		if end > len(ports) {
-			end = len(ports)
-		}
-		divided = append(divided, ports[i:end])
-	}
-	return divided
 }

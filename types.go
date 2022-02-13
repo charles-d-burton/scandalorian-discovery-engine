@@ -21,16 +21,16 @@ func (proto NetProto) String() string {
 	return "unkown"
 }
 
-type Result struct {
-	Port  int
-	Found bool
+type ScanOptions struct {
+	Proto          NetProto
+	TimeoutSeconds int
+	PPS            int
 }
 
-/*type ScanResult struct {
-	Host  string
-	IP    []net.IP
-	Ports []int
-}*/
+//New Set the default options of IPV4, 3 second Timeout, 15000 Packets Per Second
+func NewScanOptions() *ScanOptions {
+	return &ScanOptions{Proto: IPV4, TimeoutSeconds: 3, PPS: 15000}
+}
 
 type tcpHeader struct {
 	Src      uint16

@@ -7,11 +7,13 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	"go.uber.org/ratelimit"
 )
 
 func init() {
@@ -25,100 +27,136 @@ func init() {
 	}
 }
 
-func scanSyn(results chan<- Result, raddr, laddr string, port int, proto NetProto) error {
-	ack := make(chan bool, 1)
+func scanSyn(ports []uint16, raddr, laddr string, options *ScanOptions) ([]int, error) {
+	var scanOptions *ScanOptions
+	if options == nil {
+		scanOptions = NewScanOptions()
+	}
+	scanOptions = options
+
+	dportChan := make(chan uint16, 100)
+	defer close(dportChan)
+
+	results := make(chan int, 100)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go recvSynAck(ctx, laddr, raddr, uint16(port), proto, ack)
-	err := sendSyn(laddr, raddr, uint16(random(10000, 65535)), uint16(port), proto)
+	err := recvSynAck(ctx, results, laddr, raddr, ports, scanOptions.Proto)
+	if err != nil {
+		cancel()
+		log.Debugf("error setting up listener %v", err)
+		return nil, err
+	}
+
+	err = sendSyn(laddr, raddr, uint16(random(10000, 65535)), dportChan, scanOptions.Proto)
 	if err != nil {
 		cancel()
 		log.Debugf("error sending syn %v", err)
-		return err
+		return nil, err
 	}
-	select {
-	case <-ack:
-		cancel()
-		result := Result{Port: port, Found: true}
-		results <- result
-	case <-time.After(3 * time.Second):
-		result := Result{Port: port, Found: false}
-		results <- result
-		cancel()
+
+	var rl ratelimit.Limiter
+	rl = ratelimit.New(scanOptions.PPS) //Scan up to 10000 ports per second
+	for _, port := range ports {
+		rl.Take()
+		dportChan <- port
 	}
-	return nil
+
+	foundPorts := make([]int, 0)
+	to := time.NewTimer(time.Duration(scanOptions.TimeoutSeconds) * time.Second)
+	for {
+		select {
+		case found := <-results:
+			foundPorts = append(foundPorts, found)
+			to.Reset(time.Duration(scanOptions.TimeoutSeconds) * time.Second)
+		case <-to.C:
+			cancel()
+		}
+	}
+	return foundPorts, nil
 }
 
 //Adapted from https://github.com/JustinTimperio/gomap
 
-func sendSyn(laddr string, raddr string, sport uint16, dport uint16, proto NetProto) error {
+func sendSyn(laddr string, raddr string, sport uint16, dportChan <-chan uint16, proto NetProto) error {
 	// Create TCP packet struct and header
-	op := []tcpOption{
-		{
-			Kind:   2,
-			Length: 4,
-			Data:   []byte{0x05, 0xb4},
-		},
-		{
-			Kind: 0,
-		},
-	}
-
-	tcpH := tcpHeader{
-		Src:      sport,
-		Dst:      dport,
-		Seq:      rand.Uint32(),
-		Ack:      0,
-		Flags:    0x8002, //the SYN flag
-		Window:   8192,
-		ChkSum:   0,
-		UPointer: 0,
-	}
-
 	// Connect to network interface to send packet
 	conn, err := net.Dial(proto.String()+":tcp", raddr)
 	if err != nil {
+		log.Debug(err)
 		return err
 	}
-	defer conn.Close()
 
-	// Build dummy packet for checksum
-	buff := new(bytes.Buffer)
-	binary.Write(buff, binary.BigEndian, tcpH)
+	go func(conn net.Conn, dportChan <-chan uint16) {
+		defer conn.Close()
+		for dport := range dportChan {
+			op := []tcpOption{
+				{
+					Kind:   2,
+					Length: 4,
+					Data:   []byte{0x05, 0xb4},
+				},
+				{
+					Kind: 0,
+				},
+			}
 
-	for i := range op {
-		binary.Write(buff, binary.BigEndian, op[i].Kind)
-		binary.Write(buff, binary.BigEndian, op[i].Length)
-		binary.Write(buff, binary.BigEndian, op[i].Data)
-	}
+			tcpH := tcpHeader{
+				Src:      sport,
+				Dst:      dport,
+				Seq:      rand.Uint32(),
+				Ack:      0,
+				Flags:    0x8002, //the SYN flag
+				Window:   8192,
+				ChkSum:   0,
+				UPointer: 0,
+			}
 
-	binary.Write(buff, binary.BigEndian, [6]byte{})
-	data := buff.Bytes()
-	checkSum := checkSum(data, ipstr2Bytes(laddr), ipstr2Bytes(raddr))
-	tcpH.ChkSum = checkSum
+			// Build dummy packet for checksum
+			buff := new(bytes.Buffer)
+			binary.Write(buff, binary.BigEndian, tcpH)
 
-	// Build final packet
-	buff = new(bytes.Buffer)
-	binary.Write(buff, binary.BigEndian, tcpH)
+			for i := range op {
+				binary.Write(buff, binary.BigEndian, op[i].Kind)
+				binary.Write(buff, binary.BigEndian, op[i].Length)
+				binary.Write(buff, binary.BigEndian, op[i].Data)
+			}
 
-	for i := range op {
-		binary.Write(buff, binary.BigEndian, op[i].Kind)
-		binary.Write(buff, binary.BigEndian, op[i].Length)
-		binary.Write(buff, binary.BigEndian, op[i].Data)
-	}
-	binary.Write(buff, binary.BigEndian, [6]byte{})
+			binary.Write(buff, binary.BigEndian, [6]byte{})
+			data := buff.Bytes()
+			checkSum := checkSum(data, ipstr2Bytes(laddr), ipstr2Bytes(raddr))
+			tcpH.ChkSum = checkSum
 
-	// Send Packet
-	conn.Write(buff.Bytes())
+			// Build final packet
+			buff = new(bytes.Buffer)
+			binary.Write(buff, binary.BigEndian, tcpH)
+
+			for i := range op {
+				binary.Write(buff, binary.BigEndian, op[i].Kind)
+				binary.Write(buff, binary.BigEndian, op[i].Length)
+				binary.Write(buff, binary.BigEndian, op[i].Data)
+			}
+			binary.Write(buff, binary.BigEndian, [6]byte{})
+
+			// Send Packet
+			_, err := conn.Write(buff.Bytes())
+			if err != nil {
+				log.Debugf("unable to write packet to connection %v", err)
+			}
+		}
+	}(conn, dportChan)
+
 	return nil
 }
 
 //Listens for packets received that matches both the sender, receivver, and the port defined
 //https://blog.des.no/tcpdump-cheat-sheet/
-func recvSynAck(ctx context.Context, laddr string, raddr string, port uint16, proto NetProto, res chan<- bool) error {
-	//this function is the only writer to the channel so this is safe here and prevents a race condition/memory leak
-	defer close(res)
+func recvSynAck(ctx context.Context, results chan<- int, laddr string, raddr string, ports []uint16, proto NetProto) error {
 
+	//Generate searchable list of ints
+	pints := make([]int, len(ports))
+	for i, p := range ports {
+		pints[i] = int(p)
+	}
 	// Checks if the IP address is resolveable
 	listenAddr, err := net.ResolveIPAddr(proto.String(), laddr)
 	if err != nil {
@@ -130,36 +168,42 @@ func recvSynAck(ctx context.Context, laddr string, raddr string, port uint16, pr
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	//Wait for packets in a background thread
+	go func(ctx context.Context, conn *net.IPConn, raddr string, results chan<- int, pints []int) {
+		//This is the only writer for results so it's safe to close here
+		defer close(results)
 
-	// Read each packet looking for ack from raddr on packetport
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-			buff := make([]byte, 1024)
-			_, addr, err := conn.ReadFrom(buff)
-			if err != nil {
-				log.Debugf("error reading from connection %v", err)
-				continue
+		defer conn.Close()
+		// Read each packet looking for ack from raddr on packetport
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				buff := make([]byte, 1024)
+				_, addr, err := conn.ReadFrom(buff)
+				if err != nil {
+					log.Debugf("error reading from connection %v", err)
+					continue
+				}
+
+				//Position 13 is the location of the tcp flags.  0x12 indicates successful handshake
+				if addr.String() != raddr || buff[13] != 0x12 {
+					continue
+				}
+
+				var packetport uint16
+				binary.Read(bytes.NewReader(buff), binary.BigEndian, &packetport)
+
+				sorted := sort.SearchInts(pints, int(packetport))
+				if sorted < len(pints) {
+					log.Debugf("%d ACK", packetport)
+					results <- int(packetport)
+				}
 			}
-
-			//Position 13 is the location of the tcp flags.  0x12 indicates successful handshake
-			if addr.String() != raddr || buff[13] != 0x12 {
-				continue
-			}
-
-			var packetport uint16
-			binary.Read(bytes.NewReader(buff), binary.BigEndian, &packetport)
-			if port != packetport {
-				continue
-			}
-
-			res <- true
-			return nil
 		}
-	}
+	}(ctx, conn, raddr, results, pints)
+	return nil
 }
 
 /* Generate a pseudoheader
