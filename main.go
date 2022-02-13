@@ -113,6 +113,7 @@ func main() {
 }
 
 func (scan *Scan) ProcessRequest(bus MessageBus, laddr string) error {
+	log.Debug("start proccessing scan request")
 	if len(scan.Ports) == 0 {
 		for i := 0; i <= 65535; i++ {
 			scan.Ports = append(scan.Ports, strconv.Itoa(i))
@@ -126,12 +127,16 @@ func (scan *Scan) ProcessRequest(bus MessageBus, laddr string) error {
 		rl = ratelimit.New(65535) //Scan up to 10000 ports per second
 	}
 
-	intake := make(chan int)
+	intake := make(chan int, len(scan.Ports))
+	defer close(intake)
 
 	results := make(chan Result, len(scan.Ports))
 
+	log.Debug("initializing worker pool")
 	worker := func() {
 		for port := range intake {
+			rl.Take()
+			log.Debug("scanning port %d on host %s", port, scan.IP)
 			scanSyn(results, scan.IP, laddr, port, IPV4)
 		}
 	}
@@ -140,8 +145,8 @@ func (scan *Scan) ProcessRequest(bus MessageBus, laddr string) error {
 		go worker()
 	}
 
+	log.Debug("adding ports to scan channel")
 	for _, port := range scan.Ports {
-		rl.Take()
 		p, err := strconv.Atoi(port)
 		if err != nil {
 			log.Debug(err)
@@ -151,6 +156,7 @@ func (scan *Scan) ProcessRequest(bus MessageBus, laddr string) error {
 
 	discoveredPorts := make([]string, 0)
 
+	log.Debug("collecting results")
 	tracker := 0
 	for result := range results {
 		log.Debug("entered results collection")
