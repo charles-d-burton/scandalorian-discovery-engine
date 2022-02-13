@@ -2,13 +2,11 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"math/rand"
 	"net"
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	//Using out of tree due to: https://github.com/google/gopacket/issues/698
@@ -78,6 +76,11 @@ func main() {
 
 	bus.Connect(host, v.GetString("port"), errChan)
 
+	laddr, err := getLocalAddress()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	go func() {
 		messageChan := bus.Subscribe(errChan)
 		for message := range messageChan {
@@ -88,7 +91,7 @@ func main() {
 				errChan <- err
 				break
 			}
-			err = scan.ProcessRequest(bus)
+			err = scan.ProcessRequest(bus, laddr)
 			if err != nil {
 				errChan <- err
 				message.Nak()
@@ -109,7 +112,69 @@ func main() {
 	}
 }
 
-func (scan *Scan) ProcessRequest(bus MessageBus) error {
+func (scan *Scan) ProcessRequest(bus MessageBus, laddr string) error {
+	if len(scan.Ports) == 0 {
+		for i := 0; i <= 65535; i++ {
+			scan.Ports = append(scan.Ports, strconv.Itoa(i))
+		}
+	}
+
+	var rl ratelimit.Limiter
+	if scan.PPS > 0 {
+		rl = ratelimit.New(scan.PPS) //TODO: stop using constant
+	} else {
+		rl = ratelimit.New(65535) //Scan up to 10000 ports per second
+	}
+
+	intake := make(chan int)
+
+	results := make(chan Result, len(scan.Ports))
+
+	worker := func() {
+		for port := range intake {
+			scanSyn(results, scan.IP, laddr, port, IPV4)
+		}
+	}
+
+	for i := 0; i < 100; i++ { //Up to 100 workers at a time, probably want to make this tunable
+		go worker()
+	}
+
+	for _, port := range scan.Ports {
+		rl.Take()
+		p, err := strconv.Atoi(port)
+		if err != nil {
+			log.Debug(err)
+		}
+		intake <- p
+	}
+
+	discoveredPorts := make([]string, 0)
+
+	tracker := 0
+	for result := range results {
+		log.Debug("entered results collection")
+		tracker++
+		if result.Found {
+			log.Debugf("found port %d", result.Port)
+			discoveredPorts = append(discoveredPorts, strconv.Itoa(result.Port))
+		}
+
+		if tracker == len(scan.Ports) {
+			close(results)
+		}
+	}
+	log.Debug("left results collection")
+
+	if len(discoveredPorts) == 0 {
+		log.Infof("Not open ports found for request %s", scan.RequestID)
+	}
+	scan.Ports = discoveredPorts
+	return bus.Publish(scan)
+
+}
+
+/*func (scan *Scan) ProcessRequest(bus MessageBus) error {
 	if len(scan.Ports) == 0 {
 		for i := 0; i <= 65535; i++ {
 			scan.Ports = append(scan.Ports, strconv.Itoa(i))
@@ -183,7 +248,7 @@ func (scan *Scan) ProcessRequest(bus MessageBus) error {
 	scan.Ports = discoveredPorts
 
 	return bus.Publish(scan)
-}
+}*/
 
 // scanner handles scanning a single IP address.
 type Scanner struct {
