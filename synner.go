@@ -93,7 +93,7 @@ func sendSyn(laddr string, raddr string, sport uint16, dportChan <-chan uint16, 
 	go func(conn net.Conn, dportChan <-chan uint16) {
 		defer conn.Close()
 		for dport := range dportChan {
-			log.Debugf("sending scan for port %d", dport)
+			//log.Debugf("sending scan for port %d", dport)
 			op := []tcpOption{
 				{
 					Kind:   2,
