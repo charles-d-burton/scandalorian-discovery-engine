@@ -34,8 +34,7 @@ func scanSyn(ports []uint16, raddr, laddr string, options *ScanOptions) ([]int, 
 	}
 	scanOptions = options
 
-	dportChan := make(chan uint16, 100)
-	defer close(dportChan)
+	dportChan := make(chan uint16, 1000)
 
 	results := make(chan int, 100)
 
@@ -60,19 +59,24 @@ func scanSyn(ports []uint16, raddr, laddr string, options *ScanOptions) ([]int, 
 		rl.Take()
 		dportChan <- port
 	}
+	close(dportChan)
 
 	foundPorts := make([]int, 0)
-	to := time.NewTimer(time.Duration(scanOptions.TimeoutSeconds) * time.Second)
+	//to := time.NewTimer(time.Duration(scanOptions.TimeoutSeconds) * time.Second)
+	ticker := time.NewTicker(time.Duration(scanOptions.TimeoutSeconds) * time.Second)
 	for {
 		select {
 		case found := <-results:
 			foundPorts = append(foundPorts, found)
-			to.Reset(time.Duration(scanOptions.TimeoutSeconds) * time.Second)
-		case <-to.C:
+			ticker.Stop()
+			ticker.Reset(time.Duration(scanOptions.TimeoutSeconds) * time.Second)
+			//ticker = time.NewTicker(time.Duration(scanOptions.TimeoutSeconds) * time.Second)
+			//to.Reset(time.Duration(scanOptions.TimeoutSeconds) * time.Second)
+		case <-ticker.C:
 			cancel()
+			return foundPorts, nil
 		}
 	}
-	return foundPorts, nil
 }
 
 //Adapted from https://github.com/JustinTimperio/gomap
@@ -89,6 +93,7 @@ func sendSyn(laddr string, raddr string, sport uint16, dportChan <-chan uint16, 
 	go func(conn net.Conn, dportChan <-chan uint16) {
 		defer conn.Close()
 		for dport := range dportChan {
+			log.Debug("sending scan for port %d", dport)
 			op := []tcpOption{
 				{
 					Kind:   2,
@@ -143,6 +148,7 @@ func sendSyn(laddr string, raddr string, sport uint16, dportChan <-chan uint16, 
 				log.Debugf("unable to write packet to connection %v", err)
 			}
 		}
+		log.Debug("finished sending packets")
 	}(conn, dportChan)
 
 	return nil
