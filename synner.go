@@ -185,7 +185,8 @@ func recvSynAck(ctx context.Context, results chan<- int, laddr string, raddr str
 				return
 			default:
 				buff := make([]byte, 1024)
-				_, addr, err := conn.ReadFrom(buff)
+				pcount, addr, err := conn.ReadFrom(buff)
+				log.Debugf("read %d packets from socket", pcount)
 				if err != nil {
 					log.Debugf("error reading from connection %v", err)
 					continue
