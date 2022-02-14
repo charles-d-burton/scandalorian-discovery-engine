@@ -27,6 +27,7 @@ func init() {
 	}
 }
 
+//scanSyn take a list of ports and scan all of them
 func scanSyn(ports []uint16, raddr, laddr string, options *ScanOptions) ([]int, error) {
 	var scanOptions *ScanOptions
 	if options == nil {
@@ -62,7 +63,7 @@ func scanSyn(ports []uint16, raddr, laddr string, options *ScanOptions) ([]int, 
 	close(dportChan)
 
 	foundPorts := make([]int, 0)
-	//to := time.NewTimer(time.Duration(scanOptions.TimeoutSeconds) * time.Second)
+
 	ticker := time.NewTicker(time.Duration(scanOptions.TimeoutSeconds) * time.Second)
 	for {
 		select {
@@ -70,8 +71,6 @@ func scanSyn(ports []uint16, raddr, laddr string, options *ScanOptions) ([]int, 
 			foundPorts = append(foundPorts, found)
 			ticker.Stop()
 			ticker.Reset(time.Duration(scanOptions.TimeoutSeconds) * time.Second)
-			//ticker = time.NewTicker(time.Duration(scanOptions.TimeoutSeconds) * time.Second)
-			//to.Reset(time.Duration(scanOptions.TimeoutSeconds) * time.Second)
 		case <-ticker.C:
 			cancel()
 			return foundPorts, nil
@@ -80,7 +79,6 @@ func scanSyn(ports []uint16, raddr, laddr string, options *ScanOptions) ([]int, 
 }
 
 //Adapted from https://github.com/JustinTimperio/gomap
-
 func sendSyn(laddr string, raddr string, sport uint16, dportChan <-chan uint16, proto NetProto) error {
 	// Create TCP packet struct and header
 	// Connect to network interface to send packet
@@ -92,6 +90,7 @@ func sendSyn(laddr string, raddr string, sport uint16, dportChan <-chan uint16, 
 
 	go func(conn net.Conn, dportChan <-chan uint16) {
 		defer conn.Close()
+		var buff bytes.Buffer
 		for dport := range dportChan {
 			//log.Debugf("sending scan for port %d", dport)
 			op := []tcpOption{
@@ -117,36 +116,36 @@ func sendSyn(laddr string, raddr string, sport uint16, dportChan <-chan uint16, 
 			}
 
 			// Build dummy packet for checksum
-			buff := new(bytes.Buffer)
-			binary.Write(buff, binary.BigEndian, tcpH)
+			//buff := new(bytes.Buffer)
+			binary.Write(&buff, binary.BigEndian, tcpH)
 
 			for i := range op {
-				binary.Write(buff, binary.BigEndian, op[i].Kind)
-				binary.Write(buff, binary.BigEndian, op[i].Length)
-				binary.Write(buff, binary.BigEndian, op[i].Data)
+				binary.Write(&buff, binary.BigEndian, op[i].Kind)
+				binary.Write(&buff, binary.BigEndian, op[i].Length)
+				binary.Write(&buff, binary.BigEndian, op[i].Data)
 			}
 
-			binary.Write(buff, binary.BigEndian, [6]byte{})
+			binary.Write(&buff, binary.BigEndian, [6]byte{})
 			data := buff.Bytes()
 			checkSum := checkSum(data, ipstr2Bytes(laddr), ipstr2Bytes(raddr))
 			tcpH.ChkSum = checkSum
 
 			// Build final packet
-			buff = new(bytes.Buffer)
-			binary.Write(buff, binary.BigEndian, tcpH)
+			binary.Write(&buff, binary.BigEndian, tcpH)
 
 			for i := range op {
-				binary.Write(buff, binary.BigEndian, op[i].Kind)
-				binary.Write(buff, binary.BigEndian, op[i].Length)
-				binary.Write(buff, binary.BigEndian, op[i].Data)
+				binary.Write(&buff, binary.BigEndian, op[i].Kind)
+				binary.Write(&buff, binary.BigEndian, op[i].Length)
+				binary.Write(&buff, binary.BigEndian, op[i].Data)
 			}
-			binary.Write(buff, binary.BigEndian, [6]byte{})
+			binary.Write(&buff, binary.BigEndian, [6]byte{})
 
 			// Send Packet
 			_, err := conn.Write(buff.Bytes())
 			if err != nil {
 				log.Debugf("unable to write packet to connection %v", err)
 			}
+			buff.Reset()
 		}
 		log.Debug("finished sending packets")
 	}(conn, dportChan)
@@ -184,6 +183,7 @@ func recvSynAck(ctx context.Context, results chan<- int, laddr string, raddr str
 		for {
 			select {
 			case <-ctx.Done():
+				log.Debug("shutting down receiver")
 				return
 			default:
 				buff := make([]byte, 1024)
