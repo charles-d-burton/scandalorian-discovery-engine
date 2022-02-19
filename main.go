@@ -65,26 +65,35 @@ func main() {
 
 	bus.Connect(host, v.GetString("port"), errChan)
 
-	laddr, err := getLocalAddress()
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	go func() {
+
+		laddr, err := getLocalAddress()
+		if err != nil {
+			log.Fatal(err)
+		}
+
 		messageChan := bus.Subscribe(errChan)
+
 		for message := range messageChan {
 			log.Debug("processing scan")
 			var scan *Scan
 			err := json.Unmarshal(message.Data, &scan)
 			if err != nil {
 				errChan <- err
-				break
+				message.Nak()
+				continue
 			}
-			err = scan.ProcessRequest(bus, laddr)
+			err = scan.ProcessRequest(laddr)
 			if err != nil {
 				errChan <- err
 				message.Nak()
-				break
+				continue
+			}
+			err = bus.Publish(scan)
+			if err != nil {
+				errChan <- err
+				message.Nak()
+				continue
 			}
 			message.Ack()
 		}
@@ -101,7 +110,7 @@ func main() {
 	}
 }
 
-func (scan *Scan) ProcessRequest(bus MessageBus, laddr string) error {
+func (scan *Scan) ProcessRequest(laddr string) error {
 	log.Debug("start proccessing scan request")
 	scanPorts := make([]uint16, 0)
 	if len(scan.Ports) == 0 {
@@ -130,6 +139,6 @@ func (scan *Scan) ProcessRequest(bus MessageBus, laddr string) error {
 	}
 
 	scan.Ports = foundPorts
-	return bus.Publish(scan)
+	return nil
 
 }
