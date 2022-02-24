@@ -116,7 +116,7 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 
 		// Build dummy packet for checksum
 		buff := new(bytes.Buffer)
-		binary.Write(buff, binary.BigEndian, tcpH)
+		/*binary.Write(buff, binary.BigEndian, tcpH)
 
 		for i := range op {
 			binary.Write(buff, binary.BigEndian, op[i].Kind)
@@ -124,10 +124,10 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 			binary.Write(buff, binary.BigEndian, op[i].Data)
 		}
 
-		//binary.Write(buff, binary.BigEndian, [6]byte{})
+		binary.Write(buff, binary.BigEndian, [6]byte{})
 		data := buff.Bytes()
 		checkSum := checkSum(data, ipstr2Bytes(laddr), ipstr2Bytes(raddr))
-		tcpH.ChkSum = checkSum
+		tcpH.ChkSum = checkSum*/
 
 		// Build final packet
 		binary.Write(buff, binary.BigEndian, tcpH)
@@ -137,7 +137,7 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 			binary.Write(buff, binary.BigEndian, op[i].Length)
 			binary.Write(buff, binary.BigEndian, op[i].Data)
 		}
-		//binary.Write(buff, binary.BigEndian, [6]byte{})
+		binary.Write(buff, binary.BigEndian, [6]byte{})
 
 		// Send Packet
 		_, err := conn.Write(buff.Bytes())
