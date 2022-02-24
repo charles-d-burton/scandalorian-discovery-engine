@@ -95,7 +95,7 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 		op := []tcpOption{
 			{
 				Kind:   2,
-				Length: 0,
+				Length: 4,
 				Data:   []byte{0x05, 0xb4},
 			},
 			{
