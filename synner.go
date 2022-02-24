@@ -95,7 +95,7 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 		op := []tcpOption{
 			{
 				Kind:   2,
-				Length: 4,
+				Length: 0,
 				Data:   []byte{0x05, 0xb4},
 			},
 			{
@@ -109,7 +109,7 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 			Seq:      rand.Uint32(),
 			Ack:      0,
 			Flags:    0x8002, //the SYN flag
-			Window:   8192,
+			Window:   1024,
 			ChkSum:   0,
 			UPointer: 0,
 		}
@@ -121,10 +121,10 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 		for i := range op {
 			binary.Write(buff, binary.BigEndian, op[i].Kind)
 			binary.Write(buff, binary.BigEndian, op[i].Length)
-			binary.Write(buff, binary.BigEndian, op[i].Data)
+			//binary.Write(buff, binary.BigEndian, op[i].Data)
 		}
 
-		binary.Write(buff, binary.BigEndian, [6]byte{})
+		//binary.Write(buff, binary.BigEndian, [6]byte{})
 		data := buff.Bytes()
 		checkSum := checkSum(data, ipstr2Bytes(laddr), ipstr2Bytes(raddr))
 		tcpH.ChkSum = checkSum
@@ -135,9 +135,9 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 		for i := range op {
 			binary.Write(buff, binary.BigEndian, op[i].Kind)
 			binary.Write(buff, binary.BigEndian, op[i].Length)
-			binary.Write(buff, binary.BigEndian, op[i].Data)
+			//binary.Write(buff, binary.BigEndian, op[i].Data)
 		}
-		binary.Write(buff, binary.BigEndian, [6]byte{})
+		//binary.Write(buff, binary.BigEndian, [6]byte{})
 
 		// Send Packet
 		_, err := conn.Write(buff.Bytes())
