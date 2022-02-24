@@ -121,7 +121,7 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 		for i := range op {
 			binary.Write(buff, binary.BigEndian, op[i].Kind)
 			binary.Write(buff, binary.BigEndian, op[i].Length)
-			//binary.Write(buff, binary.BigEndian, op[i].Data)
+			binary.Write(buff, binary.BigEndian, op[i].Data)
 		}
 
 		//binary.Write(buff, binary.BigEndian, [6]byte{})
@@ -135,7 +135,7 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 		for i := range op {
 			binary.Write(buff, binary.BigEndian, op[i].Kind)
 			binary.Write(buff, binary.BigEndian, op[i].Length)
-			//binary.Write(buff, binary.BigEndian, op[i].Data)
+			binary.Write(buff, binary.BigEndian, op[i].Data)
 		}
 		//binary.Write(buff, binary.BigEndian, [6]byte{})
 
