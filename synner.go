@@ -89,8 +89,8 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 	}
 
 	defer conn.Close()
+	sport := uint16(random(10000, 65535))
 	for dport := range dportChan {
-		sport := uint16(random(10000, 65535))
 		//log.Debugf("sending scan for port %d", dport)
 		op := []tcpOption{
 			{
