@@ -27,14 +27,14 @@ func init() {
 	}
 }
 
-//scanSyn take a list of ports and scan all of them
+// scanSyn take a list of ports and scan all of them
 func scanSyn(ports []uint16, raddr, laddr string, options *ScanOptions) ([]int, error) {
 	var scanOptions *ScanOptions
 	if options == nil {
 		scanOptions = NewScanOptions()
 	}
 	scanOptions = options
-	dportChan := make(chan uint16, 100) //Want to keep writer busy but not finish so fast that the reciver doesn't get anything back
+	dportChan := make(chan uint16, 100) // Want to keep writer busy but not finish so fast that the reciver doesn't get anything back
 	results := make(chan int, 100)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -42,25 +42,24 @@ func scanSyn(ports []uint16, raddr, laddr string, options *ScanOptions) ([]int, 
 		err := recvSynAck(ctx, results, laddr, raddr, ports, scanOptions.Proto)
 		if err != nil {
 			cancel()
-			log.Fatalf("error setting up listener %v", err) //Fatal because it should be able to listen
+			log.Fatalf("error setting up listener %v", err) // Fatal because it should be able to listen
 		}
 	}()
 
 	go func() {
 		err := sendSyn(laddr, raddr, dportChan, scanOptions.Proto)
 		if err != nil {
-			cancel()                                //Stop receiver
-			log.Fatalf("error sending syn %v", err) //Fatal, can't open connection
+			cancel()                                // Stop receiver
+			log.Fatalf("error sending syn %v", err) // Fatal, can't open connection
 		}
 	}()
 
-	var rl ratelimit.Limiter
-	rl = ratelimit.New(scanOptions.PPS) //Scan up to 10000 ports per second
+    rl := ratelimit.New(scanOptions.PPS) // Scan up to 10000 ports per second
 	for _, port := range ports {
 		rl.Take()
 		dportChan <- port
 	}
-	close(dportChan) //Explicit close so senSyn stops
+	close(dportChan) // Explicit close so senSyn stops
 
 	foundPorts := make([]int, 0)
 
@@ -78,20 +77,19 @@ func scanSyn(ports []uint16, raddr, laddr string, options *ScanOptions) ([]int, 
 	}
 }
 
-//Adapted from https://github.com/JustinTimperio/gomap
+// Adapted from https://github.com/JustinTimperio/gomap
 func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto) error {
 	// Create TCP packet struct and header
 	// Connect to network interface to send packet
-	conn, err := net.Dial(proto.String()+":tcp", raddr)
-	if err != nil {
-		log.Debug(err)
-		return err
-	}
-
-	defer conn.Close()
-	sport := uint16(random(10000, 65535))
 	for dport := range dportChan {
-		//log.Debugf("sending scan for port %d", dport)
+		conn, err := net.Dial(proto.String()+":tcp", raddr)
+		if err != nil {
+			log.Debug(err)
+			return err
+		}
+
+		sport := uint16(random(10000, 65535))
+		// log.Debugf("sending scan for port %d", dport)
 		op := []tcpOption{
 			{
 				Kind:   2,
@@ -108,7 +106,7 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 			Dst:      dport,
 			Seq:      rand.Uint32(),
 			Ack:      0,
-			Flags:    0x8002, //the SYN flag
+			Flags:    0x8002, // the SYN flag
 			Window:   1024,
 			ChkSum:   0,
 			UPointer: 0,
@@ -116,7 +114,7 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 
 		// Build dummy packet for checksum
 		buff := new(bytes.Buffer)
-		/*binary.Write(buff, binary.BigEndian, tcpH)
+		binary.Write(buff, binary.BigEndian, tcpH)
 
 		for i := range op {
 			binary.Write(buff, binary.BigEndian, op[i].Kind)
@@ -127,7 +125,7 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 		binary.Write(buff, binary.BigEndian, [6]byte{})
 		data := buff.Bytes()
 		checkSum := checkSum(data, ipstr2Bytes(laddr), ipstr2Bytes(raddr))
-		tcpH.ChkSum = checkSum*/
+		tcpH.ChkSum = checkSum
 
 		// Build final packet
 		binary.Write(buff, binary.BigEndian, tcpH)
@@ -140,20 +138,20 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 		binary.Write(buff, binary.BigEndian, [6]byte{})
 
 		// Send Packet
-		_, err := conn.Write(buff.Bytes())
+		_, err = conn.Write(buff.Bytes())
 		if err != nil {
 			log.Debugf("unable to write packet to connection %v", err)
 		}
+        conn.Close()
 	}
 	log.Debug("finished sending packets")
 
 	return nil
 }
 
-//Listens for packets received that matches both the sender, receivver, and the port defined
-//https://blog.des.no/tcpdump-cheat-sheet/
+// Listens for packets received that matches both the sender, receivver, and the port defined
+// https://blog.des.no/tcpdump-cheat-sheet/
 func recvSynAck(ctx context.Context, results chan<- int, laddr string, raddr string, ports []uint16, proto NetProto) error {
-
 	pints := make([]int, len(ports))
 	for i, p := range ports {
 		pints[i] = int(p)
@@ -187,7 +185,7 @@ func recvSynAck(ctx context.Context, results chan<- int, laddr string, raddr str
 				continue
 			}
 
-			//Position 13 is the location of the tcp flags.  0x12 indicates successful handshake
+			// Position 13 is the location of the tcp flags.  0x12 indicates successful handshake
 			if addr.String() != raddr || buff[13] != 0x12 {
 				continue
 			}
@@ -244,11 +242,11 @@ func checkSum(data []byte, src, dst [4]byte) uint16 {
 	sum = (sum >> 16) + (sum & 0xffff)
 	sum = sum + (sum >> 16)
 
-	//XOR the result
+	// XOR the result
 	return ^uint16(sum)
 }
 
-//Convert an IPv4 address into a byte array
+// Convert an IPv4 address into a byte array
 func ipstr2Bytes(addr string) [4]byte {
 	s := strings.Split(addr, ".")
 	b0, _ := strconv.Atoi(s[0])
