@@ -88,6 +88,7 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 	}
 
 	sport := uint16(random(10000, 65535))
+    defer conn.Close()
 
 	for dport := range dportChan {
 		// log.Debugf("sending scan for port %d", dport)
@@ -143,7 +144,6 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 		if err != nil {
 			log.Debugf("unable to write packet to connection %v", err)
 		}
-		conn.Close()
 	}
 	log.Debug("finished sending packets")
 
