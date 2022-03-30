@@ -16,7 +16,7 @@ FROM golang:latest as build
 RUN mkdir /app
 WORKDIR /app
 COPY ./ .
-RUN go build -a -installsuffix cgo -ldflags="-w -s" -o discovery-engine
+RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o discovery-engine
 
 #FROM scratch as arm
 #COPY --from=build-arm /app/discovery-engine /go/bin/discovery-engine
@@ -27,5 +27,5 @@ RUN go build -a -installsuffix cgo -ldflags="-w -s" -o discovery-engine
 #ENTRYPOINT ["/go/bin/discovery-engine"]
 
 FROM alpine:latest
-COPY --from=build /app/discovery-engine /go/bin/discovery-engine
-ENTRYPOINT ["/go/bin/discovery-engine"]
+COPY --from=build /app/discovery-engine /
+ENTRYPOINT ["/discovery-engine"]
