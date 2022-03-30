@@ -54,7 +54,7 @@ func scanSyn(ports []uint16, raddr, laddr string, options *ScanOptions) ([]int, 
 		}
 	}()
 
-    rl := ratelimit.New(scanOptions.PPS) // Scan up to 10000 ports per second
+	rl := ratelimit.New(scanOptions.PPS) // Scan up to 10000 ports per second
 	for _, port := range ports {
 		rl.Take()
 		dportChan <- port
@@ -81,14 +81,15 @@ func scanSyn(ports []uint16, raddr, laddr string, options *ScanOptions) ([]int, 
 func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto) error {
 	// Create TCP packet struct and header
 	// Connect to network interface to send packet
-	for dport := range dportChan {
-		conn, err := net.Dial(proto.String()+":tcp", raddr)
-		if err != nil {
-			log.Debug(err)
-			return err
-		}
+	conn, err := net.Dial(proto.String()+":tcp", raddr)
+	if err != nil {
+		log.Debug(err)
+		return err
+	}
 
-		sport := uint16(random(10000, 65535))
+	sport := uint16(random(10000, 65535))
+
+	for dport := range dportChan {
 		// log.Debugf("sending scan for port %d", dport)
 		op := []tcpOption{
 			{
@@ -138,11 +139,11 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 		binary.Write(buff, binary.BigEndian, [6]byte{})
 
 		// Send Packet
-		_, err = conn.Write(buff.Bytes())
+        _, err := conn.Write(buff.Bytes())
 		if err != nil {
 			log.Debugf("unable to write packet to connection %v", err)
 		}
-        conn.Close()
+		conn.Close()
 	}
 	log.Debug("finished sending packets")
 
@@ -185,11 +186,11 @@ func recvSynAck(ctx context.Context, results chan<- int, laddr string, raddr str
 				continue
 			}
 
-            log.Debugf("raddr: %s", raddr)
-            log.Debugf("addrstring: %s", addr.String())
+			log.Debugf("raddr: %s", raddr)
+			log.Debugf("addrstring: %s", addr.String())
 			// Position 13 is the location of the tcp flags.  0x12 indicates successful handshake
 			if addr.String() != raddr || buff[13] != 0x12 {
-                log.Debug("packet does not match")
+				log.Debug("packet does not match")
 				continue
 			}
 
@@ -200,9 +201,9 @@ func recvSynAck(ctx context.Context, results chan<- int, laddr string, raddr str
 			if sorted < len(pints) {
 				log.Debugf("%d ACK", packetport)
 				results <- int(packetport)
-                continue
-			} 
-            log.Debug("no match")
+				continue
+			}
+			log.Debug("no match")
 		}
 	}
 }

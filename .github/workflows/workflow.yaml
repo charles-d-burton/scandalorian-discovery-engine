@@ -6,67 +6,47 @@ on:
       - main
 
 jobs:
-  discovery-engine-build-arm:
+  docker-build:
     runs-on: ubuntu-latest
-    name: Build arm version of discovery-engine
     steps:
-      - uses: actions/checkout@v2
-      - name: Docker Login
-        run: docker login --username=${{ secrets.DOCKER_USERNAME }} --password=${{ secrets.DOCKER_PASSWORD }}
-      - name: Build Arm
-        run: DOCKER_BUILDKIT=1 docker build -t charlesdburton/scandalorian-discovery-engine:arm --target=arm --file=./Dockerfile .
-      - name: Push Image
-        run: docker push charlesdburton/scandalorian-discovery-engine:arm
-  discovery-engine-build-arm64:
-    runs-on: ubuntu-latest
-    name: Build arm64 version of discovery-engine
-    steps:
-      - uses: actions/checkout@v2
-      - name: Docker Login
-        run: docker login --username=${{ secrets.DOCKER_USERNAME }} --password=${{ secrets.DOCKER_PASSWORD }}
-      - name: Build Arm64
-        run: DOCKER_BUILDKIT=1 docker build -t charlesdburton/scandalorian-discovery-engine:arm64 --target=arm64 --file=./Dockerfile .
-      - name: Push Image
-        run: docker push charlesdburton/scandalorian-discovery-engine:arm64
-  discovery-engine-build-amd64:
-    runs-on: ubuntu-latest
-    name: Build amd64 version of discovery-engine
-    steps:
-      - uses: actions/checkout@v2
-      - name: Docker Login
-        run: docker login --username=${{ secrets.DOCKER_USERNAME }} --password=${{ secrets.DOCKER_PASSWORD }}
-      - name: Build AMD64
-        run: DOCKER_BUILDKIT=1 docker build -t charlesdburton/scandalorian-discovery-engine:amd64 --target=amd64 --file=./Dockerfile .
-      - name: Push Image
-        run: docker push charlesdburton/scandalorian-discovery-engine:amd64
-  discovery-engine-build-manifest:
-    runs-on: ubuntu-latest
-    name: Collect manifest and push discovery-engine
-    needs: ["discovery-engine-build-arm", "discovery-engine-build-arm64", "discovery-engine-build-amd64"]
-    steps:
-      - uses: actions/checkout@v2
+      - name: Checkout
+        uses: actions/checkout@v2 
 
-      - name: Docker Login
-        run: docker login --username=${{ secrets.DOCKER_USERNAME }} --password=${{ secrets.DOCKER_PASSWORD }}
-      - name: Build Manifest
+      - name: Prepare
+        id: prep
         run: |
-          DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create charlesdburton/scandalorian-discovery-engine:${{ github.sha }} \
-          charlesdburton/scandalorian-discovery-engine:amd64 \
-          charlesdburton/scandalorian-discovery-engine:arm \
-          charlesdburton/scandalorian-discovery-engine:arm64 
-      - name: Annotate Arm
-        run: DOCKER_CLI_EXPERIMENTAL=enabled docker manifest annotate --arch arm charlesdburton/scandalorian-discovery-engine:${{ github.sha }} charlesdburton/scandalorian-discovery-engine:arm
-      - name: Annotate Arm64
-        run: DOCKER_CLI_EXPERIMENTAL=enabled docker manifest annotate --arch arm64 charlesdburton/scandalorian-discovery-engine:${{ github.sha }} charlesdburton/scandalorian-discovery-engine:arm64
-      - name: Annotate AMD64
-        run: DOCKER_CLI_EXPERIMENTAL=enabled docker manifest annotate --arch amd64 charlesdburton/scandalorian-discovery-engine:${{ github.sha }} charlesdburton/scandalorian-discovery-engine:amd64
-      - name: Push Manifest
-        run: DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push charlesdburton/scandalorian-discovery-engine:${{ github.sha }}
+          DOCKER_IMAGE=${{ secrets.DOCKER_USERNAME }}/scandalorian-discovery-engine
+          VERSION=${{ gihub.sha }}
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@master
+        with:
+          platforms: all
+
+      - name: Setup Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@master
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }} 
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build
+        uses: docker/build-push-action@v2
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64,linux/arm
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/scandalorian-discovery-engine:${{ github.sha }}
 
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
-    needs: ["discovery-engine-build-manifest"]
+    needs: ["docker-build"]
     steps:
       - name: Checkout Code
         uses: actions/checkout@v2
