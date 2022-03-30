@@ -185,6 +185,8 @@ func recvSynAck(ctx context.Context, results chan<- int, laddr string, raddr str
 				continue
 			}
 
+            log.Debugf("raddr: %s", raddr)
+            log.Debugf("addrstring: %s", addr.String())
 			// Position 13 is the location of the tcp flags.  0x12 indicates successful handshake
 			if addr.String() != raddr || buff[13] != 0x12 {
                 log.Debug("packet does not match")
