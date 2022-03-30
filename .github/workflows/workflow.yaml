@@ -16,7 +16,7 @@ jobs:
         id: prep
         run: |
           DOCKER_IMAGE=${{ secrets.DOCKER_USERNAME }}/scandalorian-discovery-engine
-          VERSION=${{ gihub.sha }}
+          VERSION=${{ github.sha }}
 
       - name: Setup QEMU
         uses: docker/setup-qemu-action@master
