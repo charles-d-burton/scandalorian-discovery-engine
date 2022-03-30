@@ -187,6 +187,7 @@ func recvSynAck(ctx context.Context, results chan<- int, laddr string, raddr str
 
 			// Position 13 is the location of the tcp flags.  0x12 indicates successful handshake
 			if addr.String() != raddr || buff[13] != 0x12 {
+                log.Debug("packet does not match")
 				continue
 			}
 
@@ -197,7 +198,9 @@ func recvSynAck(ctx context.Context, results chan<- int, laddr string, raddr str
 			if sorted < len(pints) {
 				log.Debugf("%d ACK", packetport)
 				results <- int(packetport)
-			}
+                continue
+			} 
+            log.Debug("no match")
 		}
 	}
 }
