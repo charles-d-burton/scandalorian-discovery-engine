@@ -56,7 +56,7 @@ func (natsConn *NatsConn) Publish(scan *Scan) error {
 	if err != nil {
 		return err
 	}
-	log.Info().Msgf("Publishing scan: %v to topic: %v", string(data), publish)
+	log.Info().RawJSON("payload", data).Msgf("Publishing scan topic: %v", publish)
 
 	_, err = natsConn.JS.Publish(publish, data)
 	if err != nil {
