@@ -88,8 +88,9 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 	}
 
 	sport := uint16(random(10000, 65535))
-    defer conn.Close()
+	defer conn.Close()
 
+	buff := bytes.NewBuffer([]byte{})
 	for dport := range dportChan {
 		// log.Debugf("sending scan for port %d", dport)
 		op := []tcpOption{
@@ -115,7 +116,6 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 		}
 
 		// Build dummy packet for checksum
-		buff := new(bytes.Buffer)
 		binary.Write(buff, binary.BigEndian, tcpH)
 
 		for i := range op {
@@ -130,6 +130,7 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 		tcpH.ChkSum = checkSum
 
 		// Build final packet
+		buff.Reset()
 		binary.Write(buff, binary.BigEndian, tcpH)
 
 		for i := range op {
@@ -140,10 +141,11 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 		binary.Write(buff, binary.BigEndian, [6]byte{})
 
 		// Send Packet
-        _, err := conn.Write(buff.Bytes())
+		_, err := conn.Write(buff.Bytes())
 		if err != nil {
 			log.Debugf("unable to write packet to connection %v", err)
 		}
+        buff.Reset()
 	}
 	log.Debug("finished sending packets")
 
