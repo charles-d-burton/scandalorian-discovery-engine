@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	log "github.com/sirupsen/logrus"
 	"go.uber.org/ratelimit"
+    "github.com/rs/zerolog/log"
 )
 
 // scanSyn take a list of ports and scan all of them
@@ -30,15 +30,15 @@ func scanSyn(ports []uint16, raddr, laddr string, options *ScanOptions) ([]int, 
 		err := recvSynAck(ctx, results, laddr, raddr, ports, scanOptions.Proto)
 		if err != nil {
 			cancel()
-			log.Fatalf("error setting up listener %v", err) // Fatal because it should be able to listen
+			log.Fatal().Msgf("error setting up listener %v", err) // Fatal because it should be able to listen
 		}
 	}()
 
 	go func() {
 		err := sendSyn(laddr, raddr, dportChan, scanOptions.Proto)
 		if err != nil {
-			cancel()                                // Stop receiver
-			log.Fatalf("error sending syn %v", err) // Fatal, can't open connection
+			cancel()                                      // Stop receiver
+			log.Fatal().Msgf("error sending syn %v", err) // Fatal, can't open connection
 		}
 	}()
 
@@ -71,7 +71,7 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 	// Connect to network interface to send packet
 	conn, err := net.Dial(proto.String()+":tcp", raddr)
 	if err != nil {
-		log.Error(err)
+		log.Error().Err(err)
 		return err
 	}
 
@@ -132,11 +132,11 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 		// Send Packet
 		_, err := conn.Write(buff.Bytes())
 		if err != nil {
-			log.Errorf("unable to write packet to connection %v", err)
+			log.Error().Msgf("unable to write packet to connection %v", err)
 		}
 		buff.Reset()
 	}
-	log.Info("finished sending packets")
+	log.Info().Msg("finished sending packets")
 
 	return nil
 }
@@ -166,22 +166,22 @@ func recvSynAck(ctx context.Context, results chan<- int, laddr string, raddr str
 	for {
 		select {
 		case <-ctx.Done():
-			log.Info("shutting down receiver")
+			log.Info().Msg("shutting down receiver")
 			return nil
 		default:
 			buff := make([]byte, 1024)
 			pcount, addr, err := conn.ReadFrom(buff)
-			log.Debugf("read %d packets from socket", pcount)
+			log.Debug().Msgf("read %d packets from socket", pcount)
 			if err != nil {
-				log.Debugf("error reading from connection %v", err)
+				log.Debug().Msgf("error reading from connection %v", err)
 				continue
 			}
 
-			log.Debugf("raddr: %s", raddr)
-			log.Debugf("addrstring: %s", addr.String())
+			log.Debug().Msgf("raddr: %s", raddr)
+			log.Debug().Msgf("addrstring: %s", addr.String())
 			// Position 13 is the location of the tcp flags.  0x12 indicates successful handshake
 			if addr.String() != raddr || buff[13] != 0x12 {
-				log.Debug("packet does not match")
+				log.Debug().Msg("packet does not match")
 				continue
 			}
 
@@ -190,7 +190,7 @@ func recvSynAck(ctx context.Context, results chan<- int, laddr string, raddr str
 
 			sorted := sort.SearchInts(pints, int(packetport))
 			if sorted < len(pints) {
-				log.Infof("%d ACK", packetport)
+				log.Info().Msgf("%d ACK", packetport)
 				results <- int(packetport)
 				continue
 			}

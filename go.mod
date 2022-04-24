@@ -10,7 +10,7 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/nats-io/nats-server/v2 v2.2.6 // indirect
 	github.com/nats-io/nats.go v1.14.0
-	github.com/sirupsen/logrus v1.8.1
+	github.com/rs/zerolog v1.26.1
 	github.com/stretchr/testify v1.7.1 // indirect
 	go.uber.org/ratelimit v0.2.0
 	golang.org/x/crypto v0.0.0-20220411220226-7b82a4e95df4 // indirect

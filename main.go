@@ -8,7 +8,8 @@ import (
 
 	scandaloriantypes "github.com/charles-d-burton/scandalorian-types"
 	"github.com/kelseyhightower/envconfig"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 /*
@@ -34,23 +35,23 @@ const (
 )
 
 func main() {
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	errChan := make(chan error, 10)
 	// var json = jsoniter.ConfigCompatibleWithStandardLibrary
-	log.SetFormatter(&log.JSONFormatter{})
 	var cs ConfigSpec
 
 	err := envconfig.Process("discovery", &cs)
 	if err != nil {
-		log.Fatal(err)
+        log.Fatal().Err(err).Msg("unable to start due to missing environment variables")
 	}
 
 	switch cs.LogLevel {
 	case "debug":
-		log.SetLevel(log.DebugLevel)
+        zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	case "info":
-		log.SetLevel(log.InfoLevel)
+        zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	default:
-		log.SetLevel(log.InfoLevel)
+        zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	}
 
 	host := cs.BusHost
@@ -59,7 +60,7 @@ func main() {
 		var nats NatsConn
 		bus = &nats
 	} else {
-		log.Error("Unknown protocol for message bus host")
+		log.Error().Msg("Unknown protocol for message bus host")
 	}
 
 	bus.Connect(host, cs.BusPort, errChan)
@@ -67,13 +68,13 @@ func main() {
 	go func() {
 		laddr, err := getLocalAddress()
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal().Err(err)
 		}
 
 		messageChan := bus.Subscribe(errChan)
 
 		for message := range messageChan {
-			log.Info("processing scan")
+			log.Info().Msg("processing scan")
 			var scan *Scan
 			err := json.Unmarshal(message.Data, &scan)
 			if err != nil {
@@ -101,29 +102,29 @@ func main() {
 	for err := range errChan {
 		bus.Close()
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal().Err(err)
 		}
-		log.Error("unkonown error")
+		log.Error().Msg("unkonown error")
 		os.Exit(1)
 	}
 }
 
 func (scan *Scan) ProcessRequest(laddr string) error {
-	log.Info("start proccessing scan request")
+	log.Info().Msg("start proccessing scan request")
 	scanPorts := make([]uint16, 0)
 	if len(scan.Ports) == 0 {
-		log.Info("no ports defined, scanning everything")
+		log.Info().Msg("no ports defined, scanning everything")
 		for i := 0; i <= 65535; i++ {
 			scanPorts = append(scanPorts, uint16(i))
 		}
 	} else {
-		log.Info("ports defined, converting to uint16 array")
+		log.Info().Msg("ports defined, converting to uint16 array")
 		for _, port := range scan.Ports {
 			scanPorts = append(scanPorts, uint16(port))
 		}
 	}
 
-	log.Info("scanning ports")
+	log.Info().Msg("scanning ports")
 	options := NewScanOptions()
 	if scan.PPS != 0 {
 		options.PPS = scan.PPS
