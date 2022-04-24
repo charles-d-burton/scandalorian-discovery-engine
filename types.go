@@ -29,7 +29,7 @@ type ScanOptions struct {
 
 //New Set the default options of IPV4, 3 second Timeout, 15000 Packets Per Second
 func NewScanOptions() *ScanOptions {
-	return &ScanOptions{Proto: IPV4, TimeoutSeconds: 3, PPS: 15000}
+	return &ScanOptions{Proto: IPV4, TimeoutSeconds: 2, PPS: 6000}
 }
 
 type tcpHeader struct {
