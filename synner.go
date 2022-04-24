@@ -23,7 +23,7 @@ func init() {
 	if level == "DEBUG" {
 		log.SetLevel(log.DebugLevel)
 	} else {
-		log.SetLevel(log.WarnLevel)
+		log.SetLevel(log.InfoLevel)
 	}
 }
 
@@ -90,31 +90,32 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 	sport := uint16(random(10000, 65535))
 	defer conn.Close()
 
+	op := []tcpOption{
+		{
+			Kind:   2,
+			Length: 4,
+			Data:   []byte{0x05, 0xb4},
+		},
+		{
+			Kind: 0,
+		},
+	}
+
+	tcpH := tcpHeader{
+		Src:      sport,
+		Dst:      0,
+		Seq:      rand.Uint32(),
+		Ack:      0,
+		Flags:    0x8002, // the SYN flag
+		Window:   1024,
+		ChkSum:   0,
+		UPointer: 0,
+	}
+
 	buff := bytes.NewBuffer([]byte{})
 	for dport := range dportChan {
-		// log.Debugf("sending scan for port %d", dport)
-		op := []tcpOption{
-			{
-				Kind:   2,
-				Length: 4,
-				Data:   []byte{0x05, 0xb4},
-			},
-			{
-				Kind: 0,
-			},
-		}
 
-		tcpH := tcpHeader{
-			Src:      sport,
-			Dst:      dport,
-			Seq:      rand.Uint32(),
-			Ack:      0,
-			Flags:    0x8002, // the SYN flag
-			Window:   1024,
-			ChkSum:   0,
-			UPointer: 0,
-		}
-
+		tcpH.Dst = dport
 		// Build dummy packet for checksum
 		binary.Write(buff, binary.BigEndian, tcpH)
 
@@ -145,7 +146,7 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 		if err != nil {
 			log.Debugf("unable to write packet to connection %v", err)
 		}
-        buff.Reset()
+		buff.Reset()
 	}
 	log.Debug("finished sending packets")
 
@@ -201,11 +202,10 @@ func recvSynAck(ctx context.Context, results chan<- int, laddr string, raddr str
 
 			sorted := sort.SearchInts(pints, int(packetport))
 			if sorted < len(pints) {
-				log.Debugf("%d ACK", packetport)
+				log.Infof("%d ACK", packetport)
 				results <- int(packetport)
 				continue
 			}
-			log.Debug("no match")
 		}
 	}
 }

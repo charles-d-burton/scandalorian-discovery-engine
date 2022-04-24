@@ -25,9 +25,6 @@ const (
 	durableName  = "discovery"
 	subscription = "discovery.requests"
 	publish      = "scan-engine.scans"
-	//rateLimit    = 1000 //Upper boundary for how fast to scan a host TODO: convert to tunable
-	maxSamples  = 50
-	maxDuration = 2 //Average number of seconds a scan is taking,  TODO: should convert to tunable
 )
 
 func main() {
@@ -75,7 +72,7 @@ func main() {
 		messageChan := bus.Subscribe(errChan)
 
 		for message := range messageChan {
-			log.Debug("processing scan")
+			log.Info("processing scan")
 			var scan *Scan
 			err := json.Unmarshal(message.Data, &scan)
 			if err != nil {
@@ -111,21 +108,21 @@ func main() {
 }
 
 func (scan *Scan) ProcessRequest(laddr string) error {
-	log.Debug("start proccessing scan request")
+	log.Info("start proccessing scan request")
 	scanPorts := make([]uint16, 0)
 	if len(scan.Ports) == 0 {
-		log.Debug("no ports defined, scanning everything")
+		log.Info("no ports defined, scanning everything")
 		for i := 0; i <= 65535; i++ {
 			scanPorts = append(scanPorts, uint16(i))
 		}
 	} else {
-		log.Debug("ports defined, converting to uint16 array")
+		log.Info("ports defined, converting to uint16 array")
 		for _, port := range scan.Ports {
 			scanPorts = append(scanPorts, uint16(port))
 		}
 	}
 
-	log.Debug("scanning ports")
+	log.Info("scanning ports")
 	options := NewScanOptions()
 	if scan.PPS != 0 {
 		options.PPS = scan.PPS
