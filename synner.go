@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"math/rand"
 	"net"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,17 +14,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	"go.uber.org/ratelimit"
 )
-
-func init() {
-	log.SetFormatter(&log.JSONFormatter{})
-	log.SetOutput(os.Stdout)
-	level := os.Getenv("LOG_LEVEL")
-	if level == "DEBUG" {
-		log.SetLevel(log.DebugLevel)
-	} else {
-		log.SetLevel(log.InfoLevel)
-	}
-}
 
 // scanSyn take a list of ports and scan all of them
 func scanSyn(ports []uint16, raddr, laddr string, options *ScanOptions) ([]int, error) {

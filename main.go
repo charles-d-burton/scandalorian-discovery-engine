@@ -4,11 +4,11 @@ import (
 	"os"
 	"strings"
 
-	//Using out of tree due to: https://github.com/google/gopacket/issues/698
+	// Using out of tree due to: https://github.com/google/gopacket/issues/698
 
 	scandaloriantypes "github.com/charles-d-burton/scandalorian-types"
+	"github.com/kelseyhightower/envconfig"
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 /*
@@ -20,6 +20,12 @@ type Scan struct {
 	scandaloriantypes.PortScan
 }
 
+type ConfigSpec struct {
+	LogLevel string
+	BusHost  string `required:"true"`
+	BusPort  string `required:"true"`
+}
+
 const (
 	streamName   = "discovery"
 	durableName  = "discovery"
@@ -29,29 +35,25 @@ const (
 
 func main() {
 	errChan := make(chan error, 10)
-	//var json = jsoniter.ConfigCompatibleWithStandardLibrary
+	// var json = jsoniter.ConfigCompatibleWithStandardLibrary
 	log.SetFormatter(&log.JSONFormatter{})
-	log.SetLevel(log.DebugLevel) //TODO: Remember to reset
-	v := viper.New()
-	v.SetEnvPrefix("engine")
-	v.AutomaticEnv()
-	if !v.IsSet("port") || !v.IsSet("host") {
-		log.Fatal("Must set host and port for message bus")
+	var cs ConfigSpec
+
+	err := envconfig.Process("discovery", &cs)
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	if !v.IsSet("log_level") {
+	switch cs.LogLevel {
+	case "debug":
+		log.SetLevel(log.DebugLevel)
+	case "info":
 		log.SetLevel(log.InfoLevel)
-	} else {
-		level, err := log.ParseLevel(v.GetString("log_level"))
-		if err != nil {
-			log.SetLevel(log.InfoLevel)
-			log.Warn(err)
-		} else {
-			log.Info("setting log level to %v", level)
-			log.SetLevel(level)
-		}
+	default:
+		log.SetLevel(log.InfoLevel)
 	}
-	host := v.GetString("host")
+
+	host := cs.BusHost
 	var bus MessageBus
 	if strings.Contains(host, "nats") {
 		var nats NatsConn
@@ -60,10 +62,9 @@ func main() {
 		log.Error("Unknown protocol for message bus host")
 	}
 
-	bus.Connect(host, v.GetString("port"), errChan)
+	bus.Connect(host, cs.BusPort, errChan)
 
 	go func() {
-
 		laddr, err := getLocalAddress()
 		if err != nil {
 			log.Fatal(err)
@@ -96,7 +97,7 @@ func main() {
 		}
 	}()
 
-	//This should be rethought for liveness/readiness probes instead
+	// This should be rethought for liveness/readiness probes instead
 	for err := range errChan {
 		bus.Close()
 		if err != nil {
@@ -137,5 +138,4 @@ func (scan *Scan) ProcessRequest(laddr string) error {
 
 	scan.Ports = foundPorts
 	return nil
-
 }
