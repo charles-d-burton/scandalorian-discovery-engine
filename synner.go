@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"go.uber.org/ratelimit"
-    "github.com/rs/zerolog/log"
 )
 
 // scanSyn take a list of ports and scan all of them
@@ -78,32 +78,30 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 	sport := uint16(random(10000, 65535))
 	defer conn.Close()
 
-	op := []tcpOption{
-		{
-			Kind:   2,
-			Length: 4,
-			Data:   []byte{0x05, 0xb4},
-		},
-		{
-			Kind: 0,
-		},
-	}
-
-	tcpH := tcpHeader{
-		Src:      sport,
-		Dst:      0,
-		Seq:      rand.Uint32(),
-		Ack:      0,
-		Flags:    0x8002, // the SYN flag
-		Window:   1024,
-		ChkSum:   0,
-		UPointer: 0,
-	}
-
 	buff := bytes.NewBuffer([]byte{})
 	for dport := range dportChan {
+		op := []tcpOption{
+			{
+				Kind:   2,
+				Length: 4,
+				Data:   []byte{0x05, 0xb4},
+			},
+			{
+				Kind: 0,
+			},
+		}
 
-		tcpH.Dst = dport
+		tcpH := tcpHeader{
+			Src:      sport,
+			Dst:      dport,
+			Seq:      rand.Uint32(),
+			Ack:      0,
+			Flags:    0x8002, // the SYN flag
+			Window:   1024,
+			ChkSum:   0,
+			UPointer: 0,
+		}
+
 		// Build dummy packet for checksum
 		binary.Write(buff, binary.BigEndian, tcpH)
 
