@@ -71,7 +71,7 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 	// Connect to network interface to send packet
 	conn, err := net.Dial(proto.String()+":tcp", raddr)
 	if err != nil {
-		log.Debug(err)
+		log.Error(err)
 		return err
 	}
 
@@ -132,11 +132,11 @@ func sendSyn(laddr string, raddr string, dportChan <-chan uint16, proto NetProto
 		// Send Packet
 		_, err := conn.Write(buff.Bytes())
 		if err != nil {
-			log.Debugf("unable to write packet to connection %v", err)
+			log.Errorf("unable to write packet to connection %v", err)
 		}
 		buff.Reset()
 	}
-	log.Debug("finished sending packets")
+	log.Info("finished sending packets")
 
 	return nil
 }
@@ -166,7 +166,7 @@ func recvSynAck(ctx context.Context, results chan<- int, laddr string, raddr str
 	for {
 		select {
 		case <-ctx.Done():
-			log.Debug("shutting down receiver")
+			log.Info("shutting down receiver")
 			return nil
 		default:
 			buff := make([]byte, 1024)
